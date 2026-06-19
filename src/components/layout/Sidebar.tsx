@@ -15,7 +15,7 @@ export default function Sidebar() {
   const { user, signOut } = useAuthStore();
 
   return (
-    <aside className="flex w-56 flex-col border-r border-border bg-card">
+    <aside className="hidden md:flex w-56 flex-col border-r border-border bg-card">
       <div className="flex items-center gap-2.5 px-4 h-14 border-b border-border">
         <img src={asset('icon.png')} alt="Apex Finance" className="h-7 w-7 object-contain" />
         <div className="leading-tight">

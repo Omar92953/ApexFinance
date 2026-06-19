@@ -1,13 +1,15 @@
+import { LogOut } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useAuthStore } from '@/stores/authStore';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'EGP'];
 
 export default function SettingsPage() {
   const { currency, theme, setCurrency, setTheme } = useSettingsStore();
-  const { user } = useAuthStore();
+  const { user, signOut } = useAuthStore();
 
   return (
     <div className="max-w-2xl">
@@ -40,6 +42,9 @@ export default function SettingsPage() {
             <div className="flex justify-between py-1.5"><span className="text-muted-foreground">Email</span><span>{user?.email}</span></div>
             <div className="flex justify-between py-1.5 border-t border-border"><span className="text-muted-foreground">Data security</span><span className="text-success">Row-level security · only you can read</span></div>
           </div>
+          <Button variant="outline" className="mt-4 w-full sm:w-auto" onClick={() => signOut()}>
+            <LogOut className="h-4 w-4 mr-1.5" /> Sign out
+          </Button>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-5">
