@@ -218,6 +218,42 @@ export const retainedApi = {
   },
 };
 
+// ---------- API credentials (Shopify / Meta) ----------
+// We deliberately never SELECT the `credentials` (token) column back to the client —
+// only connection status. Tokens are written here and read only by Edge Functions.
+export interface ConnectionStatus {
+  platform: string;
+  is_valid: boolean;
+  last_verified: string | null;
+}
+
+export const credentialsApi = {
+  async status(businessId: string): Promise<ConnectionStatus[]> {
+    return unwrap(
+      await supabase.from('api_credentials').select('platform, is_valid, last_verified').eq('business_id', businessId),
+    ) || [];
+  },
+  async connect(businessId: string, platform: 'shopify' | 'meta', credentials: Record<string, string>): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('api_credentials').upsert(
+      { user_id, business_id: businessId, platform, credentials, is_valid: false },
+      { onConflict: 'business_id,platform' },
+    );
+    if (error) throw error;
+  },
+  async disconnect(businessId: string, platform: 'shopify' | 'meta'): Promise<void> {
+    const { error } = await supabase.from('api_credentials').delete().eq('business_id', businessId).eq('platform', platform);
+    if (error) throw error;
+  },
+  // Trigger a sync via the Edge Function; returns the function's JSON result.
+  async sync(businessId: string, platform: 'shopify' | 'meta', days = 30): Promise<any> {
+    const fn = platform === 'shopify' ? 'sync-shopify' : 'sync-meta';
+    const { data, error } = await supabase.functions.invoke(fn, { body: { business_id: businessId, days } });
+    if (error) throw error;
+    return data;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {

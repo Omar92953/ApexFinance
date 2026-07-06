@@ -9,6 +9,7 @@ import DataEntryTab from '@/components/finance/DataEntryTab';
 import CostsTab from '@/components/finance/CostsTab';
 import BalanceTab from '@/components/finance/BalanceTab';
 import StatementsTab from '@/components/finance/StatementsTab';
+import IntegrationsTab from '@/components/finance/IntegrationsTab';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -16,6 +17,7 @@ const TABS = [
   { key: 'costs', label: 'Costs' },
   { key: 'balance', label: 'Assets & Liabilities' },
   { key: 'statements', label: 'Statements' },
+  { key: 'integrations', label: 'Integrations' },
 ] as const;
 
 function monthRange(): { start: string; end: string } {
@@ -93,6 +95,7 @@ export default function BusinessDetailPage() {
       {tab === 'costs' && <CostsTab business={business} onChanged={refresh} />}
       {tab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
       {tab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
+      {tab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
     </div>
   );
 }
