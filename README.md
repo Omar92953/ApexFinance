@@ -38,6 +38,20 @@ npm run preview       # preview the built app
 DEPLOY_TARGET=pages npm run build   # build with the /ApexFinance/ base path for GitHub Pages
 ```
 
+## Desktop app (Electron)
+
+The desktop app wraps the same React build and uses the same Supabase database,
+so desktop and web/phone stay in sync.
+
+```
+npm run electron:preview   # build for desktop + launch the app
+npm run electron:build     # build the Windows installer → release/Apex Finance Setup <version>.exe
+npm run electron:dev       # run against the Vite dev server (live reload)
+```
+
+Entry points: `electron/main.cjs` (window + IPC) and `electron/preload.cjs`
+(exposes `window.electronAPI`, which the custom `TitleBar` uses for min/max/close).
+
 ## Security model
 
 - All finance data is keyed to your `auth.uid()` and protected by RLS — a second account

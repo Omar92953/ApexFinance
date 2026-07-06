@@ -3,11 +3,18 @@
   "private": true,
   "version": "1.0.0",
   "description": "Apex Finance - finance & cost management for your businesses (web + desktop)",
+  "author": "Omar Moaz",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:electron": "tsc && cross-env DEPLOY_TARGET=electron vite build",
     "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "cross-env ELECTRON_DEV_URL=http://localhost:5173 electron .",
+    "electron:preview": "npm run build:electron && electron .",
+    "electron:build": "npm run build:electron && electron-builder --win",
     "lint": "eslint src --ext ts,tsx"
   },
   "dependencies": {
@@ -40,9 +47,37 @@
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
+    "cross-env": "^7.0.3",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.0.12"
+  },
+  "build": {
+    "appId": "com.apex.finance",
+    "productName": "Apex Finance",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Apex Finance"
+    }
   }
 }

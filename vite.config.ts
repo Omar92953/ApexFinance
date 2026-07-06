@@ -2,9 +2,14 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
-// base must match the GitHub Pages repo subpath for production.
-// Use '/' for local dev / Electron, '/ApexFinance/' for GitHub Pages.
-const base = process.env.DEPLOY_TARGET === 'pages' ? '/ApexFinance/' : '/';
+// base depends on the deploy target:
+//  - pages    → '/ApexFinance/' (GitHub Pages repo subpath)
+//  - electron → './'            (relative, so assets load over file://)
+//  - default  → '/'             (local dev server)
+const base =
+  process.env.DEPLOY_TARGET === 'pages' ? '/ApexFinance/'
+  : process.env.DEPLOY_TARGET === 'electron' ? './'
+  : '/';
 
 export default defineConfig({
   base,
