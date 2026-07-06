@@ -49,7 +49,7 @@ export default function SettingsPage() {
 
         <div className="rounded-xl border border-border bg-card p-5">
           <h3 className="text-sm font-semibold mb-1">About</h3>
-          <p className="text-sm text-muted-foreground">Apex Finance v1.0 — web + desktop, backed by Supabase. Shopify & Meta live sync arrives in Phase 2.</p>
+          <p className="text-sm text-muted-foreground">Apex Business Manager v1.0 — finance + CRM, web + desktop, backed by Supabase.</p>
         </div>
       </div>
     </div>

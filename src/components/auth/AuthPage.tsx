@@ -37,9 +37,9 @@ export default function AuthPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <img src={asset('icon.png')} alt="Apex Finance" className="h-14 w-14 object-contain mb-3" />
-          <h1 className="text-2xl font-bold tracking-tight">Apex Finance</h1>
-          <p className="text-sm text-muted-foreground mt-1">Finance & cost management for your businesses</p>
+          <img src={asset('icon.png')} alt="Apex Business Manager" className="h-14 w-14 object-contain mb-3" />
+          <h1 className="text-2xl font-bold tracking-tight">Apex Business Manager</h1>
+          <p className="text-sm text-muted-foreground mt-1">Finance, cost & customer management for your businesses</p>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-6 shadow-lg">

@@ -254,6 +254,138 @@ export const credentialsApi = {
   },
 };
 
+// ---------- CRM: contacts ----------
+export interface Contact {
+  id: string;
+  business_id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  city?: string | null;
+  country?: string | null;
+  status: string;
+  source: string;
+  tags: string[];
+  shopify_customer_id?: string | null;
+  total_spent: number;
+  orders_count: number;
+  accepts_marketing: boolean;
+  last_order_date?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DealRow {
+  id: string;
+  business_id: string;
+  contact_id?: string | null;
+  title: string;
+  value: number;
+  stage: string;
+  notes?: string | null;
+  expected_close?: string | null;
+}
+
+export interface TaskRow {
+  id: string;
+  business_id: string;
+  contact_id?: string | null;
+  deal_id?: string | null;
+  title: string;
+  due_date?: string | null;
+  is_done: boolean;
+}
+
+async function logActivity(businessId: string, contactId: string, type: string, description: string) {
+  try {
+    const user_id = await uid();
+    await supabase.from('contact_activities').insert({ user_id, business_id: businessId, contact_id: contactId, type, description });
+  } catch { /* non-fatal */ }
+}
+
+export const contactsApi = {
+  async list(businessId: string): Promise<Contact[]> {
+    return unwrap(await supabase.from('contacts').select('*').eq('business_id', businessId).order('updated_at', { ascending: false })) || [];
+  },
+  async create(c: Partial<Contact>): Promise<Contact> {
+    const user_id = await uid();
+    const created: Contact = unwrap(await supabase.from('contacts').insert({ ...c, user_id }).select().single());
+    await logActivity(created.business_id, created.id, 'created', 'Contact created');
+    return created;
+  },
+  async update(id: string, patch: Partial<Contact>): Promise<Contact> {
+    return unwrap(await supabase.from('contacts').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).select().single());
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('contacts').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Trigger the Shopify customer import Edge Function.
+  async importFromShopify(businessId: string): Promise<any> {
+    const { data, error } = await supabase.functions.invoke('sync-shopify-customers', { body: { business_id: businessId } });
+    if (error) throw error;
+    return data;
+  },
+};
+
+export const notesApi = {
+  async list(contactId: string): Promise<Array<{ id: string; body: string; created_at: string }>> {
+    return unwrap(await supabase.from('contact_notes').select('id, body, created_at').eq('contact_id', contactId).order('created_at', { ascending: false })) || [];
+  },
+  async add(businessId: string, contactId: string, body: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('contact_notes').insert({ user_id, business_id: businessId, contact_id: contactId, body });
+    if (error) throw error;
+    await logActivity(businessId, contactId, 'note', body.slice(0, 120));
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('contact_notes').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const activitiesApi = {
+  async list(contactId: string): Promise<Array<{ id: string; type: string; description: string; created_at: string }>> {
+    return unwrap(await supabase.from('contact_activities').select('id, type, description, created_at').eq('contact_id', contactId).order('created_at', { ascending: false })) || [];
+  },
+};
+
+export const dealsApi = {
+  async list(businessId: string): Promise<DealRow[]> {
+    return unwrap(await supabase.from('deals').select('*').eq('business_id', businessId).order('created_at', { ascending: false })) || [];
+  },
+  async create(d: Partial<DealRow>): Promise<DealRow> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('deals').insert({ ...d, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<DealRow>): Promise<DealRow> {
+    return unwrap(await supabase.from('deals').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).select().single());
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('deals').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const tasksApi = {
+  async list(businessId: string): Promise<TaskRow[]> {
+    return unwrap(await supabase.from('tasks').select('*').eq('business_id', businessId).order('due_date', { ascending: true, nullsFirst: false })) || [];
+  },
+  async create(t: Partial<TaskRow>): Promise<TaskRow> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('tasks').insert({ ...t, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<TaskRow>): Promise<TaskRow> {
+    return unwrap(await supabase.from('tasks').update(patch).eq('id', id).select().single());
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {

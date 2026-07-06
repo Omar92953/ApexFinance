@@ -10,8 +10,8 @@ export default function TitleBar() {
   return (
     <div className="titlebar-drag flex h-9 items-center justify-between border-b border-border bg-card px-3 select-none">
       <div className="flex items-center gap-2">
-        <img src={asset('icon.png')} alt="Apex Finance" className="h-4 w-4 object-contain" />
-        <span className="text-[12px] font-semibold text-foreground tracking-wide">Apex Finance</span>
+        <img src={asset('icon.png')} alt="Apex Business Manager" className="h-4 w-4 object-contain" />
+        <span className="text-[12px] font-semibold text-foreground tracking-wide">Apex Business Manager</span>
       </div>
       <div className="titlebar-no-drag flex items-center gap-1">
         <button onClick={() => electron.window?.minimize()} className="rounded p-1.5 hover:bg-muted" aria-label="Minimize">

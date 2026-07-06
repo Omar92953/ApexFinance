@@ -51,6 +51,16 @@ or inline its two exports at the top of each function.
 4. In Apex Finance → **Integrations → Meta**: enter the Ad Account ID and token →
    **Connect** → **Sync now**.
 
+## CRM (customers) setup
+1. **Create the CRM tables**: run `supabase/crm_schema.sql` once in the SQL editor
+   (contacts, notes, activity, deals, tasks — all with RLS).
+2. **Deploy the customer import function** (same as the others):
+   `supabase functions deploy sync-shopify-customers`
+3. In a business → **Customers** tab → **Import from Shopify** pulls customer name,
+   email, phone, city/country, tags, total spent, orders count, marketing consent.
+   You can also **Add contact** manually. (Meta cannot provide customer emails — only
+   Shopify + manual + UTM attribution.)
+
 ## What syncs
 - **Shopify** → `gross_sales`, `net_sales`, `orders`, `units_sold` per day.
 - **Meta** → `meta_spend`, `meta_conversion_value` per day.

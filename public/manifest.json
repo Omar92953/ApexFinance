@@ -1,7 +1,7 @@
 {
-  "name": "Apex Finance",
-  "short_name": "Apex Finance",
-  "description": "Finance & cost management for your businesses",
+  "name": "Apex Business Manager",
+  "short_name": "Apex Business",
+  "description": "Finance, cost & customer management for your businesses",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

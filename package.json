@@ -2,7 +2,7 @@
   "name": "apex-finance",
   "private": true,
   "version": "1.0.0",
-  "description": "Apex Finance - finance & cost management for your businesses (web + desktop)",
+  "description": "Apex Business Manager - finance, cost & customer management for your businesses (web + desktop)",
   "author": "Omar Moaz",
   "type": "module",
   "main": "electron/main.cjs",
@@ -57,7 +57,7 @@
   },
   "build": {
     "appId": "com.apex.finance",
-    "productName": "Apex Finance",
+    "productName": "Apex Business Manager",
     "directories": {
       "output": "release"
     },
@@ -77,7 +77,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Apex Finance"
+      "shortcutName": "Apex Business Manager"
     }
   }
 }
