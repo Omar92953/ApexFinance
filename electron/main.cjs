@@ -1,7 +1,15 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 
 let mainWindow = null;
+
+// Apex logo for the window / taskbar icon (dist copy when packaged, public in dev).
+function iconPath() {
+  const distIcon = path.join(__dirname, '..', 'dist', 'icon.png');
+  const publicIcon = path.join(__dirname, '..', 'public', 'icon.png');
+  return fs.existsSync(distIcon) ? distIcon : publicIcon;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -11,6 +19,7 @@ function createWindow() {
     minHeight: 680,
     frame: false, // custom TitleBar (renders when window.electronAPI exists)
     backgroundColor: '#0a0a0a',
+    icon: iconPath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
