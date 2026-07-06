@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { LOCAL_USER_ID } from '@/stores/authStore';
 
 // ---------- Types ----------
 export type ProfitModel =
@@ -68,9 +69,8 @@ export interface MetricRow {
 }
 
 async function uid(): Promise<string> {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error('Not authenticated');
-  return data.user.id;
+  // Login disabled: everything is stored under one shared local identity.
+  return LOCAL_USER_ID;
 }
 
 function unwrap<T>(res: { data: T | null; error: any }): T {

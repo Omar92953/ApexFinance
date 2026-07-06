@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
 
-// Login page is bypassed "for now": the app auto-signs into a single shared
-// account so it opens straight to the dashboard. NOTE: because the web build is
-// public, anyone with the URL enters this same account — re-enable the real
-// login (AuthPage) before storing sensitive data.
-const DEFAULT_EMAIL = 'owner@apexbusiness.app';
-const DEFAULT_PASSWORD = 'ApexOwner!2026';
+// Login is disabled "for now": the app runs on a single shared local identity so
+// it opens straight to the dashboard with no login page. Data access is opened up
+// in the DB (see supabase/open_access.sql). NOTE: this means anyone with the URL
+// can read/write the data — re-enable real auth before storing sensitive info.
+// To restore login: revert this file + authStore usage and re-run the RLS section
+// of supabase/schema.sql + supabase/crm_schema.sql.
+export const LOCAL_USER_ID = '00000000-0000-0000-0000-000000000001';
+
+const STUB_USER = { id: LOCAL_USER_ID, email: 'owner@apexbusiness.app' } as unknown as User;
 
 interface AuthState {
   session: Session | null;
@@ -19,45 +21,17 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-async function autoLogin(): Promise<Session | null> {
-  // Try to sign in; if the account doesn't exist yet, create it then sign in.
-  let res = await supabase.auth.signInWithPassword({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD });
-  if (res.error) {
-    await supabase.auth.signUp({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD });
-    res = await supabase.auth.signInWithPassword({ email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD });
-  }
-  return res.data.session ?? null;
-}
-
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
-  user: null,
-  loading: true,
+  user: STUB_USER,
+  loading: false,
 
   init: async () => {
-    const { data } = await supabase.auth.getSession();
-    let session = data.session;
-    if (!session) {
-      try { session = await autoLogin(); } catch { /* fall back to AuthPage */ }
-    }
-    set({ session, user: session?.user ?? null, loading: false });
-    supabase.auth.onAuthStateChange((_event, s) => {
-      set({ session: s, user: s?.user ?? null });
-    });
+    // No authentication step — go straight in.
+    set({ user: STUB_USER, session: null, loading: false });
   },
 
-  signIn: async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
-  },
-
-  signUp: async (email, password) => {
-    const { error } = await supabase.auth.signUp({ email, password });
-    return { error: error?.message ?? null };
-  },
-
-  signOut: async () => {
-    await supabase.auth.signOut();
-    set({ session: null, user: null });
-  },
+  signIn: async () => ({ error: null }),
+  signUp: async () => ({ error: null }),
+  signOut: async () => { /* no-op while login is disabled */ },
 }));
