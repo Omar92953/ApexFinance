@@ -83,6 +83,8 @@ begin
   ]
   loop
     if to_regclass('public.' || t) is null then continue; end if;
+    -- Login is off, so drop the FK to auth.users (the app stores a fixed local id).
+    execute format('alter table %I drop constraint if exists %I;', t, t || '_user_id_fkey');
     execute format('alter table %I enable row level security;', t);
     execute format('drop policy if exists own_rows on %I;', t);
     execute format('drop policy if exists own_settings on %I;', t);
