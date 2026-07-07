@@ -79,7 +79,8 @@ begin
     'businesses','additional_costs','product_cost_items','financial_inputs',
     'retained_earnings_history','business_goals','metrics_cache',
     'order_line_items','campaign_cache','reports','api_credentials',
-    'contacts','contact_notes','contact_activities','deals','tasks','user_settings'
+    'contacts','contact_notes','contact_activities','deals','tasks','user_settings',
+    'products','product_variants','shipping_zones','shipping_rates'
   ]
   loop
     if to_regclass('public.' || t) is null then continue; end if;

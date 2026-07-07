@@ -40,6 +40,8 @@ export interface ProfitCalculation {
   perOrderCosts: number;
   perProductCosts: number;
   fixedCosts: number;
+  cogsTotal: number;         // per-product COGS from the product catalog
+  shippingCost: number;      // zone-based shipping
   netProfit: number;
   profitMargin: number;
   userProfit: number;
@@ -56,7 +58,8 @@ export class ProfitEngine {
   static calculate(
     metrics: Record<string, number>,
     config: ProfitConfig,
-    additionalCosts: AdditionalCost[] = []
+    additionalCosts: AdditionalCost[] = [],
+    landed: { cogsTotal?: number; shippingCost?: number } = {}
   ): ProfitCalculation {
     const grossSales = metrics['gross_sales'] || 0;
     const netSales = metrics['net_sales'] || 0;
@@ -92,8 +95,12 @@ export class ProfitEngine {
 
     const totalAdditionalCosts = perOrderCosts + perProductCosts + fixedCosts;
 
-    // Net Profit = Net Sales - Total Ad Spend - Additional Costs
-    const netProfit = netSales - totalAdSpend - totalAdditionalCosts;
+    // Per-product COGS + zone shipping (from the product catalog / compute layer)
+    const cogsTotal = landed.cogsTotal ?? 0;
+    const shippingCost = landed.shippingCost ?? 0;
+
+    // Net Profit = Net Sales - Ad Spend - Additional Costs - COGS - Shipping
+    const netProfit = netSales - totalAdSpend - totalAdditionalCosts - cogsTotal - shippingCost;
 
     // Profit Margin
     const profitMargin = netSales > 0 ? (netProfit / netSales) * 100 : 0;
@@ -163,6 +170,8 @@ export class ProfitEngine {
       perOrderCosts,
       perProductCosts,
       fixedCosts,
+      cogsTotal,
+      shippingCost,
       netProfit,
       profitMargin,
       userProfit,
@@ -194,6 +203,8 @@ export class ProfitEngine {
       perOrderCosts: 0,
       perProductCosts: 0,
       fixedCosts: 0,
+      cogsTotal: 0,
+      shippingCost: 0,
       netProfit: 0,
       profitMargin: 0,
       userProfit: 0,
@@ -222,6 +233,8 @@ export class ProfitEngine {
       totals.perOrderCosts += calculation.perOrderCosts;
       totals.perProductCosts += calculation.perProductCosts;
       totals.fixedCosts += calculation.fixedCosts;
+      totals.cogsTotal += calculation.cogsTotal ?? 0;
+      totals.shippingCost += calculation.shippingCost ?? 0;
       totals.netProfit += calculation.netProfit;
       totals.userProfit += calculation.userProfit;
       totals.orders += calculation.orders ?? 0;

@@ -386,6 +386,173 @@ export const tasksApi = {
   },
 };
 
+// ---------- Products & variants ----------
+export interface Product {
+  id: string;
+  business_id: string;
+  handle?: string | null;
+  title: string;
+  vendor?: string | null;
+  product_type?: string | null;
+  tags: string[];
+  status?: string;
+  image_url?: string | null;
+}
+
+export interface ProductVariant {
+  id: string;
+  business_id: string;
+  product_id: string;
+  sku?: string | null;
+  title?: string | null;
+  price: number;
+  compare_at_price?: number | null;
+  cost_per_item: number;
+  inventory_qty: number;
+}
+
+// Minimal RFC-4180 CSV parser (handles quoted fields with commas / newlines).
+function parseCsv(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let field = '', row: string[] = [], inQuotes = false;
+  const s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((h) => h.trim());
+  return rows.slice(1).filter((r) => r.some((c) => c.trim() !== '')).map((r) => {
+    const o: Record<string, string> = {};
+    headers.forEach((h, i) => { o[h] = (r[i] ?? '').trim(); });
+    return o;
+  });
+}
+
+export const productsApi = {
+  async listProducts(businessId: string): Promise<Product[]> {
+    return unwrap(await supabase.from('products').select('*').eq('business_id', businessId).order('title')) || [];
+  },
+  async listVariants(businessId: string): Promise<ProductVariant[]> {
+    return unwrap(await supabase.from('product_variants').select('*').eq('business_id', businessId).order('created_at')) || [];
+  },
+  async createProduct(p: Partial<Product>): Promise<Product> {
+    const user_id = await uid();
+    const created: Product = unwrap(await supabase.from('products').insert({ ...p, user_id }).select().single());
+    return created;
+  },
+  async updateVariant(id: string, patch: Partial<ProductVariant>): Promise<void> {
+    const { error } = await supabase.from('product_variants').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async createVariant(v: Partial<ProductVariant>): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('product_variants').insert({ ...v, user_id });
+    if (error) throw error;
+  },
+  async removeProduct(id: string): Promise<void> {
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // Import Shopify's standard product CSV export.
+  async importFromShopifyCsv(businessId: string, csvText: string): Promise<{ products: number; variants: number }> {
+    const user_id = await uid();
+    const rows = parseCsv(csvText);
+    if (rows.length === 0) return { products: 0, variants: 0 };
+
+    // Group rows by Handle; carry product-level fields from the first row of each handle.
+    const groups = new Map<string, { product: any; variants: any[] }>();
+    for (const r of rows) {
+      const handle = r['Handle'] || r['handle'];
+      if (!handle) continue;
+      if (!groups.has(handle)) {
+        groups.set(handle, {
+          product: {
+            business_id: businessId, user_id, handle,
+            title: r['Title'] || handle,
+            vendor: r['Vendor'] || null,
+            product_type: r['Type'] || r['Product Type'] || null,
+            tags: r['Tags'] ? r['Tags'].split(',').map((t) => t.trim()).filter(Boolean) : [],
+            status: (r['Status'] || 'active').toLowerCase(),
+            image_url: r['Image Src'] || null,
+          },
+          variants: [],
+        });
+      }
+      const g = groups.get(handle)!;
+      const price = parseFloat(r['Variant Price'] || '0');
+      const sku = r['Variant SKU'] || '';
+      const optionValues = [r['Option1 Value'], r['Option2 Value'], r['Option3 Value']].filter(Boolean).join(' / ');
+      if (sku || price || optionValues) {
+        g.variants.push({
+          business_id: businessId, user_id,
+          sku: sku || `${handle}-${g.variants.length + 1}`,
+          title: optionValues || 'Default',
+          price: price || 0,
+          compare_at_price: r['Variant Compare At Price'] ? parseFloat(r['Variant Compare At Price']) : null,
+          cost_per_item: r['Cost per item'] ? parseFloat(r['Cost per item']) : 0,
+        });
+      }
+    }
+
+    // Upsert products, then variants (need product ids).
+    const productRows = Array.from(groups.values()).map((g) => g.product);
+    const savedProducts: Product[] = unwrap(
+      await supabase.from('products').upsert(productRows, { onConflict: 'business_id,handle' }).select(),
+    ) || [];
+    const handleToId = new Map(savedProducts.map((p) => [p.handle, p.id]));
+
+    const variantRows: any[] = [];
+    for (const [handle, g] of groups) {
+      const pid = handleToId.get(handle);
+      if (!pid) continue;
+      for (const v of g.variants) variantRows.push({ ...v, product_id: pid });
+    }
+    if (variantRows.length) {
+      const { error } = await supabase.from('product_variants').upsert(variantRows, { onConflict: 'business_id,sku' });
+      if (error) throw error;
+    }
+    return { products: productRows.length, variants: variantRows.length };
+  },
+};
+
+// ---------- Shipping zones ----------
+export interface ShippingZone {
+  id: string;
+  business_id: string;
+  name: string;
+  flat_rate: number;
+  is_default: boolean;
+  sort_order?: number;
+}
+
+export const shippingApi = {
+  async listZones(businessId: string): Promise<ShippingZone[]> {
+    return unwrap(await supabase.from('shipping_zones').select('*').eq('business_id', businessId).order('sort_order')) || [];
+  },
+  async createZone(z: Partial<ShippingZone>): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('shipping_zones').insert({ ...z, user_id });
+    if (error) throw error;
+  },
+  async updateZone(id: string, patch: Partial<ShippingZone>): Promise<void> {
+    const { error } = await supabase.from('shipping_zones').update(patch).eq('id', id);
+    if (error) throw error;
+  },
+  async removeZone(id: string): Promise<void> {
+    const { error } = await supabase.from('shipping_zones').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {

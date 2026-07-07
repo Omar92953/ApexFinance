@@ -13,6 +13,7 @@ import IntegrationsTab from '@/components/finance/IntegrationsTab';
 import CustomersTab from '@/components/crm/CustomersTab';
 import DealsTab from '@/components/crm/DealsTab';
 import TasksTab from '@/components/crm/TasksTab';
+import ProductsTab from '@/components/inventory/ProductsTab';
 
 const TABS = [
   { key: 'overview', label: 'Overview', group: 'Finance' },
@@ -20,11 +21,14 @@ const TABS = [
   { key: 'costs', label: 'Costs', group: 'Finance' },
   { key: 'balance', label: 'Assets & Liabilities', group: 'Finance' },
   { key: 'statements', label: 'Statements', group: 'Finance' },
+  { key: 'products', label: 'Products', group: 'Inventory' },
   { key: 'customers', label: 'Customers', group: 'CRM' },
   { key: 'deals', label: 'Deals', group: 'CRM' },
   { key: 'tasks', label: 'Tasks', group: 'CRM' },
   { key: 'integrations', label: 'Integrations', group: 'Setup' },
 ] as const;
+
+const GROUPS = ['Finance', 'Inventory', 'CRM', 'Setup'] as const;
 
 function monthRange(): { start: string; end: string } {
   const now = new Date();
@@ -82,17 +86,24 @@ export default function BusinessDetailPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1 border-b border-border mb-5">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-2 border-b border-border mb-5">
+        {GROUPS.map((g) => (
+          <div key={g} className="flex flex-col">
+            <span className="px-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">{g}</span>
+            <div className="flex">
+              {TABS.filter((t) => t.group === g).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
@@ -101,6 +112,7 @@ export default function BusinessDetailPage() {
       {tab === 'costs' && <CostsTab business={business} onChanged={refresh} />}
       {tab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
       {tab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
+      {tab === 'products' && <ProductsTab business={business} />}
       {tab === 'customers' && <CustomersTab business={business} />}
       {tab === 'deals' && <DealsTab business={business} />}
       {tab === 'tasks' && <TasksTab business={business} />}

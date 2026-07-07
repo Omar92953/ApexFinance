@@ -32,6 +32,8 @@ export default function OverviewTab({ profit, business }: { profit: ProfitCalcul
         <h3 className="text-sm font-semibold mb-3">Profit waterfall</h3>
         <div className="space-y-1.5 text-sm">
           <Row label="Net revenue" value={formatCurrency(profit.netSales, cur)} />
+          <Row label="− COGS (products)" value={formatCurrency(profit.cogsTotal, cur)} muted />
+          <Row label="− Shipping" value={formatCurrency(profit.shippingCost, cur)} muted />
           <Row label="− Ad spend" value={formatCurrency(profit.totalAdSpend, cur)} muted />
           <Row label="− Per-order costs" value={formatCurrency(profit.perOrderCosts, cur)} muted />
           <Row label="− Per-product costs" value={formatCurrency(profit.perProductCosts, cur)} muted />
