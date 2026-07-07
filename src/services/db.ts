@@ -468,6 +468,28 @@ export const productsApi = {
     const { error } = await supabase.from('products').delete().eq('id', id);
     if (error) throw error;
   },
+  async removeVariant(id: string): Promise<void> {
+    const { error } = await supabase.from('product_variants').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Set stock to an absolute value and log the delta as an inventory adjustment.
+  async setStock(businessId: string, variantId: string, newQty: number, oldQty: number): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('product_variants').update({ inventory_qty: newQty, updated_at: new Date().toISOString() }).eq('id', variantId);
+    if (error) throw error;
+    const delta = newQty - oldQty;
+    if (delta !== 0) {
+      await supabase.from('inventory_movements').insert({
+        user_id, business_id: businessId, variant_id: variantId, movement_type: 'adjustment',
+        quantity: delta, notes: 'Manual stock adjustment',
+      });
+    }
+  },
+  // Bulk-set one field across many variants (cost_per_item | price | inventory_qty).
+  async bulkSet(ids: string[], field: 'cost_per_item' | 'price' | 'inventory_qty', value: number): Promise<void> {
+    const { error } = await supabase.from('product_variants').update({ [field]: value, updated_at: new Date().toISOString() }).in('id', ids);
+    if (error) throw error;
+  },
 
   // Import Shopify's standard product CSV export.
   async importFromShopifyCsv(businessId: string, csvText: string): Promise<{ products: number; variants: number }> {
