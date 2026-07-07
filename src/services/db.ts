@@ -553,6 +553,144 @@ export const shippingApi = {
   },
 };
 
+// ---------- Capital (cash) ----------
+export interface CapitalAccount {
+  id: string;
+  business_id: string;
+  name: string;
+  account_type: string;
+  opening_balance: number;
+  current_balance: number;
+  currency?: string;
+}
+
+export interface CapitalTransaction {
+  id: string;
+  business_id: string;
+  account_id: string;
+  transaction_type: string;
+  amount: number;
+  running_balance: number;
+  category?: string | null;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  description?: string | null;
+  date: string;
+}
+
+export const capitalApi = {
+  async listAccounts(businessId: string): Promise<CapitalAccount[]> {
+    return unwrap(await supabase.from('capital_accounts').select('*').eq('business_id', businessId).order('created_at')) || [];
+  },
+  async createAccount(a: Partial<CapitalAccount>): Promise<CapitalAccount> {
+    const user_id = await uid();
+    const opening = Number(a.opening_balance) || 0;
+    return unwrap(await supabase.from('capital_accounts').insert({ ...a, user_id, opening_balance: opening, current_balance: opening }).select().single());
+  },
+  async removeAccount(id: string): Promise<void> {
+    const { error } = await supabase.from('capital_accounts').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Records a transaction (signed amount) and updates the account's running balance.
+  async recordTransaction(t: {
+    business_id: string; account_id: string; transaction_type: string; amount: number;
+    category?: string; description?: string; date?: string; reference_type?: string; reference_id?: string;
+  }): Promise<void> {
+    const user_id = await uid();
+    const acct = unwrap(await supabase.from('capital_accounts').select('current_balance').eq('id', t.account_id).single()) as { current_balance: number };
+    const running = (Number(acct.current_balance) || 0) + t.amount;
+    const { error } = await supabase.from('capital_transactions').insert({
+      user_id, business_id: t.business_id, account_id: t.account_id, transaction_type: t.transaction_type,
+      amount: t.amount, running_balance: running, category: t.category ?? null, description: t.description ?? null,
+      date: t.date ?? new Date().toISOString().slice(0, 10), reference_type: t.reference_type ?? null, reference_id: t.reference_id ?? null,
+    });
+    if (error) throw error;
+    const { error: uerr } = await supabase.from('capital_accounts').update({ current_balance: running }).eq('id', t.account_id);
+    if (uerr) throw uerr;
+  },
+  async transfer(businessId: string, fromId: string, toId: string, amount: number, description?: string): Promise<void> {
+    await this.recordTransaction({ business_id: businessId, account_id: fromId, transaction_type: 'transfer', amount: -Math.abs(amount), category: 'transfer', description: description ?? 'Transfer out' });
+    await this.recordTransaction({ business_id: businessId, account_id: toId, transaction_type: 'transfer', amount: Math.abs(amount), category: 'transfer', description: description ?? 'Transfer in' });
+  },
+  async listTransactions(businessId: string, limit = 200): Promise<CapitalTransaction[]> {
+    return unwrap(await supabase.from('capital_transactions').select('*').eq('business_id', businessId).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(limit)) || [];
+  },
+  async removeTransaction(id: string): Promise<void> {
+    const { error } = await supabase.from('capital_transactions').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Manufacturing & inventory ----------
+export interface ManufacturingBatch {
+  id: string;
+  business_id: string;
+  batch_number?: string | null;
+  product_id?: string | null;
+  variant_id?: string | null;
+  quantity_produced: number;
+  total_cost: number;
+  cost_per_unit: number;
+  status: string;
+  notes?: string | null;
+  date: string;
+}
+
+export const manufacturingApi = {
+  async listBatches(businessId: string): Promise<ManufacturingBatch[]> {
+    return unwrap(await supabase.from('manufacturing_batches').select('*').eq('business_id', businessId).order('date', { ascending: false })) || [];
+  },
+  // Records a production batch: creates the batch + cost items, adds an inventory
+  // movement, debits capital, and updates the variant's WAC cost + stock.
+  async createBatch(input: {
+    business_id: string; variant_id: string; product_id?: string | null; quantity: number;
+    costItems: Array<{ name: string; category: string; value: number }>;
+    accountId?: string | null; date?: string; notes?: string; batchNumber?: string;
+  }): Promise<void> {
+    const user_id = await uid();
+    const totalCost = input.costItems.reduce((s, c) => s + (Number(c.value) || 0), 0);
+    const qty = Number(input.quantity) || 0;
+    const costPerUnit = qty > 0 ? totalCost / qty : 0;
+
+    const batch: ManufacturingBatch = unwrap(await supabase.from('manufacturing_batches').insert({
+      user_id, business_id: input.business_id, batch_number: input.batchNumber ?? null,
+      product_id: input.product_id ?? null, variant_id: input.variant_id,
+      quantity_produced: qty, total_cost: totalCost, cost_per_unit: costPerUnit,
+      status: 'completed', notes: input.notes ?? null, date: input.date ?? new Date().toISOString().slice(0, 10),
+      completed_at: new Date().toISOString(),
+    }).select().single());
+
+    if (input.costItems.length) {
+      await supabase.from('manufacturing_cost_items').insert(
+        input.costItems.filter((c) => c.name || c.value).map((c) => ({ user_id, business_id: input.business_id, batch_id: batch.id, name: c.name, category: c.category, value: Number(c.value) || 0 })),
+      );
+    }
+
+    await supabase.from('inventory_movements').insert({
+      user_id, business_id: input.business_id, product_id: input.product_id ?? null, variant_id: input.variant_id,
+      movement_type: 'manufacture_in', quantity: qty, cost_basis: costPerUnit,
+      reference_type: 'manufacturing_batch', reference_id: batch.id, date: input.date ?? new Date().toISOString().slice(0, 10),
+    });
+
+    // Debit capital
+    if (input.accountId && totalCost) {
+      await capitalApi.recordTransaction({
+        business_id: input.business_id, account_id: input.accountId, transaction_type: 'manufacturing',
+        amount: -Math.abs(totalCost), category: 'manufacturing', description: `Manufacturing batch (${qty} units)`,
+        reference_type: 'manufacturing_batch', reference_id: batch.id, date: input.date,
+      });
+    }
+
+    // Update variant WAC + stock
+    const variant = unwrap(await supabase.from('product_variants').select('inventory_qty, cost_per_item').eq('id', input.variant_id).single()) as { inventory_qty: number; cost_per_item: number };
+    const existQty = Number(variant.inventory_qty) || 0;
+    const existCost = Number(variant.cost_per_item) || 0;
+    const newQty = existQty + qty;
+    const newCost = newQty > 0 ? (existQty * existCost + qty * costPerUnit) / newQty : costPerUnit;
+    await supabase.from('product_variants').update({ inventory_qty: newQty, cost_per_item: newCost, updated_at: new Date().toISOString() }).eq('id', input.variant_id);
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {

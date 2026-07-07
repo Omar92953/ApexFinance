@@ -14,14 +14,18 @@ import CustomersTab from '@/components/crm/CustomersTab';
 import DealsTab from '@/components/crm/DealsTab';
 import TasksTab from '@/components/crm/TasksTab';
 import ProductsTab from '@/components/inventory/ProductsTab';
+import ManufacturingTab from '@/components/inventory/ManufacturingTab';
+import CapitalTab from '@/components/finance/CapitalTab';
 
 const TABS = [
   { key: 'overview', label: 'Overview', group: 'Finance' },
+  { key: 'capital', label: 'Capital', group: 'Finance' },
   { key: 'data', label: 'Data', group: 'Finance' },
   { key: 'costs', label: 'Costs', group: 'Finance' },
   { key: 'balance', label: 'Assets & Liabilities', group: 'Finance' },
   { key: 'statements', label: 'Statements', group: 'Finance' },
   { key: 'products', label: 'Products', group: 'Inventory' },
+  { key: 'manufacturing', label: 'Manufacturing', group: 'Inventory' },
   { key: 'customers', label: 'Customers', group: 'CRM' },
   { key: 'deals', label: 'Deals', group: 'CRM' },
   { key: 'tasks', label: 'Tasks', group: 'CRM' },
@@ -108,11 +112,13 @@ export default function BusinessDetailPage() {
       </div>
 
       {tab === 'overview' && <OverviewTab profit={profit} business={business} />}
+      {tab === 'capital' && <CapitalTab business={business} profit={profit} />}
       {tab === 'data' && <DataEntryTab business={business} start={start} end={end} onChanged={refresh} />}
       {tab === 'costs' && <CostsTab business={business} onChanged={refresh} />}
       {tab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
       {tab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
       {tab === 'products' && <ProductsTab business={business} />}
+      {tab === 'manufacturing' && <ManufacturingTab business={business} />}
       {tab === 'customers' && <CustomersTab business={business} />}
       {tab === 'deals' && <DealsTab business={business} />}
       {tab === 'tasks' && <TasksTab business={business} />}

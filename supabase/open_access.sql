@@ -80,7 +80,9 @@ begin
     'retained_earnings_history','business_goals','metrics_cache',
     'order_line_items','campaign_cache','reports','api_credentials',
     'contacts','contact_notes','contact_activities','deals','tasks','user_settings',
-    'products','product_variants','shipping_zones','shipping_rates'
+    'products','product_variants','shipping_zones','shipping_rates',
+    'capital_accounts','capital_transactions',
+    'manufacturing_batches','manufacturing_cost_items','inventory_movements'
   ]
   loop
     if to_regclass('public.' || t) is null then continue; end if;
