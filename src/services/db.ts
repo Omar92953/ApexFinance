@@ -436,6 +436,13 @@ function parseCsv(text: string): Record<string, string>[] {
   });
 }
 
+// Pick the first non-empty value among possible header names (Shopify has two
+// CSV export formats — classic "Variant SKU" and newer "SKU"/"URL handle").
+function pick(r: Record<string, string>, names: string[]): string {
+  for (const n of names) { const v = r[n]; if (v !== undefined && v !== '') return v; }
+  return '';
+}
+
 export const productsApi = {
   async listProducts(businessId: string): Promise<Product[]> {
     return unwrap(await supabase.from('products').select('*').eq('business_id', businessId).order('title')) || [];
@@ -471,34 +478,43 @@ export const productsApi = {
     // Group rows by Handle; carry product-level fields from the first row of each handle.
     const groups = new Map<string, { product: any; variants: any[] }>();
     for (const r of rows) {
-      const handle = r['Handle'] || r['handle'];
+      // handle: classic "Handle" or newer "URL handle"; else derive from title.
+      const title = pick(r, ['Title', 'title']);
+      let handle = pick(r, ['Handle', 'handle', 'URL handle']);
+      if (!handle) handle = title ? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
       if (!handle) continue;
       if (!groups.has(handle)) {
         groups.set(handle, {
           product: {
             business_id: businessId, user_id, handle,
-            title: r['Title'] || handle,
-            vendor: r['Vendor'] || null,
-            product_type: r['Type'] || r['Product Type'] || null,
-            tags: r['Tags'] ? r['Tags'].split(',').map((t) => t.trim()).filter(Boolean) : [],
-            status: (r['Status'] || 'active').toLowerCase(),
-            image_url: r['Image Src'] || null,
+            title: title || handle,
+            vendor: pick(r, ['Vendor']) || null,
+            product_type: pick(r, ['Type', 'Product Type', 'Product category']) || null,
+            tags: pick(r, ['Tags']) ? pick(r, ['Tags']).split(',').map((t) => t.trim()).filter(Boolean) : [],
+            status: (pick(r, ['Status']) || 'active').toLowerCase(),
+            image_url: pick(r, ['Image Src', 'Product image URL', 'Variant image URL']) || null,
           },
           variants: [],
         });
       }
       const g = groups.get(handle)!;
-      const price = parseFloat(r['Variant Price'] || '0');
-      const sku = r['Variant SKU'] || '';
-      const optionValues = [r['Option1 Value'], r['Option2 Value'], r['Option3 Value']].filter(Boolean).join(' / ');
+      const price = parseFloat(pick(r, ['Variant Price', 'Price']) || '0');
+      const sku = pick(r, ['Variant SKU', 'SKU']);
+      const compareRaw = pick(r, ['Variant Compare At Price', 'Compare-at price']);
+      const costRaw = pick(r, ['Cost per item']);
+      const optionValues = [
+        pick(r, ['Option1 Value', 'Option1 value']),
+        pick(r, ['Option2 Value', 'Option2 value']),
+        pick(r, ['Option3 Value', 'Option3 value']),
+      ].filter((v) => v && v !== 'Default Title').join(' / ');
       if (sku || price || optionValues) {
         g.variants.push({
           business_id: businessId, user_id,
           sku: sku || `${handle}-${g.variants.length + 1}`,
           title: optionValues || 'Default',
           price: price || 0,
-          compare_at_price: r['Variant Compare At Price'] ? parseFloat(r['Variant Compare At Price']) : null,
-          cost_per_item: r['Cost per item'] ? parseFloat(r['Cost per item']) : 0,
+          compare_at_price: compareRaw ? parseFloat(compareRaw) : null,
+          cost_per_item: costRaw ? parseFloat(costRaw) : 0,
         });
       }
     }
