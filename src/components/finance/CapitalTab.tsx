@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Wallet, Trash2, TrendingUp } from 'lucide-react';
+import { Plus, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Wallet, Trash2, TrendingUp, Banknote } from 'lucide-react';
 import type { Business, CapitalAccount, CapitalTransaction } from '@/services/db';
 import type { ProfitCalculation } from '@/finance/profit-engine';
 import { capitalApi } from '@/services/db';
@@ -9,10 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils';
 
-type Mode = 'expense' | 'income' | 'transfer' | 'account' | 'profit' | null;
+type Mode = 'expense' | 'income' | 'transfer' | 'account' | 'profit' | 'withdrawal' | null;
 
 export default function CapitalTab({ business, profit }: { business: Business; profit: ProfitCalculation | null }) {
-  const cur = business.currency ?? 'USD';
+  const cur = business.currency ?? 'EGP';
   const [accounts, setAccounts] = useState<CapitalAccount[]>([]);
   const [txs, setTxs] = useState<CapitalTransaction[]>([]);
   const [mode, setMode] = useState<Mode>(null);
@@ -31,6 +31,10 @@ export default function CapitalTab({ business, profit }: { business: Business; p
 
   const total = useMemo(() => accounts.reduce((s, a) => s + (Number(a.current_balance) || 0), 0), [accounts]);
   const acctName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '—';
+  const drawnThisYear = useMemo(() => {
+    const yr = new Date().getFullYear().toString();
+    return txs.filter((t) => t.transaction_type === 'withdrawal' && t.date.startsWith(yr)).reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+  }, [txs]);
 
   const txTypes = useMemo(() => Array.from(new Set(txs.map((t) => t.transaction_type))), [txs]);
   const filteredTxs = useMemo(() => txs.filter((t) => {
@@ -56,6 +60,9 @@ export default function CapitalTab({ business, profit }: { business: Business; p
       } else if (mode === 'profit') {
         const amt = profit?.netProfit ?? 0;
         if (f.account_id && amt) await capitalApi.recordTransaction({ business_id: business.id, account_id: f.account_id, transaction_type: 'income', amount: amt, category: 'profit', description: 'Profit transferred to capital' });
+      } else if (mode === 'withdrawal') {
+        const raw = parseFloat(f.amount) || 0;
+        if (f.account_id && raw) await capitalApi.recordTransaction({ business_id: business.id, account_id: f.account_id, transaction_type: 'withdrawal', amount: -Math.abs(raw), category: 'drawings', description: f.description || 'Owner drawings', date: f.date });
       } else if (mode === 'expense' || mode === 'income') {
         const raw = parseFloat(f.amount) || 0;
         const amt = mode === 'expense' ? -Math.abs(raw) : Math.abs(raw);
@@ -73,14 +80,21 @@ export default function CapitalTab({ business, profit }: { business: Business; p
       {/* Total + quick actions */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-xs text-muted-foreground">Total capital</div>
-            <div className="text-3xl font-bold tabular-nums">{formatCurrency(total, cur)}</div>
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="text-xs text-muted-foreground">Total capital</div>
+              <div className="text-3xl font-bold tabular-nums">{formatCurrency(total, cur)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Drawn this year</div>
+              <div className="text-xl font-semibold tabular-nums text-muted-foreground">{formatCurrency(drawnThisYear, cur)}</div>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => open('expense')}><ArrowDownCircle className="h-4 w-4 mr-1.5 text-destructive" /> Expense</Button>
             <Button size="sm" variant="outline" onClick={() => open('income')}><ArrowUpCircle className="h-4 w-4 mr-1.5 text-success" /> Income</Button>
             <Button size="sm" variant="outline" onClick={() => open('transfer')} disabled={accounts.length < 2}><ArrowLeftRight className="h-4 w-4 mr-1.5" /> Transfer</Button>
+            <Button size="sm" variant="outline" onClick={() => open('withdrawal')} disabled={!accounts.length}><Banknote className="h-4 w-4 mr-1.5" /> Withdraw</Button>
             <Button size="sm" variant="outline" onClick={() => open('profit')} disabled={!accounts.length}><TrendingUp className="h-4 w-4 mr-1.5" /> Profit → capital</Button>
             <Button size="sm" onClick={() => open('account')}><Plus className="h-4 w-4 mr-1.5" /> Account</Button>
           </div>
@@ -163,7 +177,7 @@ export default function CapitalTab({ business, profit }: { business: Business; p
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {mode === 'expense' ? 'Record expense' : mode === 'income' ? 'Record income' : mode === 'transfer' ? 'Transfer between accounts' : mode === 'profit' ? 'Transfer profit to capital' : 'Add account'}
+              {mode === 'expense' ? 'Record expense' : mode === 'income' ? 'Record income' : mode === 'transfer' ? 'Transfer between accounts' : mode === 'withdrawal' ? 'Owner withdrawal (drawings)' : mode === 'profit' ? 'Transfer profit to capital' : 'Add account'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">

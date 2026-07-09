@@ -1110,6 +1110,35 @@ export const glApi = {
   },
 };
 
+// ---------- Period closes (month-close snapshots, Phase 5) ----------
+export interface PeriodCloseRow {
+  id: string;
+  business_id: string;
+  period_key: string; // 'YYYY-MM'
+  revenue: number;
+  cogs: number;
+  total_expenses: number;
+  net_income: number;
+  total_assets: number;
+  total_liabilities: number;
+  total_equity: number;
+  closed_at: string;
+}
+
+export const periodClosesApi = {
+  async list(businessId: string): Promise<PeriodCloseRow[]> {
+    return unwrap(await supabase.from('period_closes').select('*').eq('business_id', businessId).order('period_key', { ascending: false })) || [];
+  },
+  async close(businessId: string, snapshot: Omit<PeriodCloseRow, 'id' | 'business_id' | 'closed_at'>): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('period_closes').upsert(
+      { user_id, business_id: businessId, ...snapshot, closed_at: new Date().toISOString() },
+      { onConflict: 'business_id,period_key' },
+    );
+    if (error) throw error;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {

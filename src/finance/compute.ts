@@ -1,9 +1,10 @@
 import { ProfitEngine, type ProfitConfig, type AdditionalCost } from './profit-engine';
 import type { Business, AdditionalCostRow } from '@/services/db';
-import { metricsApi, productsApi, shippingApi, costRulesApi } from '@/services/db';
+import { metricsApi, productsApi, shippingApi, costRulesApi, capitalApi } from '@/services/db';
 import { supabase } from '@/lib/supabase';
 import { computeLtvPredictions, type OrderRow } from './ltv-engine';
-import { computeCostRules, type CostRuleBreakdown, type CostRuleContext, type CostCategory } from './cost-rules';
+import { computeCostRules, dateOverlapDays, type CostRuleBreakdown, type CostRuleContext, type CostCategory } from './cost-rules';
+import { computeCashFlowForecast, type ForecastWeek } from './forecast';
 
 export interface MonthlyCostPoint extends Record<CostCategory, number> {
   month: string;
@@ -205,4 +206,76 @@ export async function computeBusinessProfit(business: Business, start: string, e
   if (autoLtv !== null) calc.ltv = autoLtv;
 
   return calc;
+}
+
+// Monthly revenue/expenses/net-income trend for the last N months (Profitability tab).
+export interface MonthlyPnLPoint { month: string; label: string; revenue: number; expenses: number; netIncome: number }
+export async function computeMonthlyPnLTrend(business: Business, months = 6): Promise<MonthlyPnLPoint[]> {
+  const now = new Date();
+  const out: MonthlyPnLPoint[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+    const start = monthStart.toISOString().slice(0, 10);
+    const end = monthEnd.toISOString().slice(0, 10);
+    const calc = await computeBusinessProfit(business, start, end);
+    out.push({
+      month: start.slice(0, 7), label: monthStart.toLocaleDateString('en-US', { month: 'short' }),
+      revenue: calc.netSales, expenses: calc.netSales - calc.netProfit, netIncome: calc.netProfit,
+    });
+  }
+  return out;
+}
+
+// Profit ranking by product: units sold × contribution margin per unit, for the period.
+export interface ProductProfitRow { variantId: string; title: string; sku: string | null; unitsSold: number; revenue: number; contributionTotal: number }
+export async function computeProductProfitability(business: Business, start: string, end: string): Promise<ProductProfitRow[]> {
+  const [variants, products, rules, pli] = await Promise.all([
+    productsApi.listVariants(business.id),
+    productsApi.listProducts(business.id),
+    costRulesApi.list(business.id),
+    fetchPeriodLineItems(business, start, end),
+  ]);
+  const productTitle = new Map(products.map((p) => [p.id, p.title]));
+
+  return variants.map((v) => {
+    const units = (v.sku && pli.unitsBySku.get(v.sku)) || 0;
+    const price = Number(v.price) || 0;
+    const cogs = Number(v.cost_per_item) || 0;
+    const perUnitRules = rules.filter((r) =>
+      r.is_active && r.basis === 'per_unit' &&
+      (r.scope_type === 'none' || (r.scope_type === 'product' && r.scope_id === v.id)) &&
+      dateOverlapDays(r.effective_from, r.effective_to, start, end) > 0,
+    ).reduce((s, r) => s + (Number(r.value) || 0), 0);
+    const contributionPerUnit = price - cogs - perUnitRules;
+    return {
+      variantId: v.id, title: `${productTitle.get(v.product_id) || 'Product'}${v.title && v.title !== 'Default' ? ' · ' + v.title : ''}`,
+      sku: v.sku ?? null, unitsSold: units, revenue: units * price, contributionTotal: units * contributionPerUnit,
+    };
+  }).filter((r) => r.unitsSold > 0).sort((a, b) => b.contributionTotal - a.contributionTotal);
+}
+
+// 13-week cash-flow forecast: starting balance from capital accounts, average
+// daily net cash generation from the trailing 30 days, weekly-equivalent fixed
+// costs from active cost rules.
+export async function computeCashFlowForecastForBusiness(business: Business, weeks = 13): Promise<ForecastWeek[]> {
+  const end = new Date().toISOString().slice(0, 10);
+  const start = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+
+  const [accounts, calc, rules] = await Promise.all([
+    capitalApi.listAccounts(business.id),
+    computeBusinessProfit(business, start, end),
+    costRulesApi.list(business.id),
+  ]);
+  const startingBalance = accounts.reduce((s, a) => s + (Number(a.current_balance) || 0), 0);
+  const avgDailyNetInflow = calc.netProfit / 30;
+
+  const weeklyFixedCosts = rules
+    .filter((r) => r.is_active && ['fixed_daily', 'fixed_weekly', 'fixed_monthly'].includes(r.basis))
+    .reduce((sum, r) => {
+      const perDay = r.basis === 'fixed_daily' ? r.value : r.basis === 'fixed_weekly' ? r.value / 7 : r.value / 30;
+      return sum + perDay * 7;
+    }, 0);
+
+  return computeCashFlowForecast({ startingBalance, avgDailyNetInflow, weeklyFixedCosts }, weeks);
 }
