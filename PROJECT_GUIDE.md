@@ -206,7 +206,7 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 | 2 | Cost Rules Engine (category/basis/scope/effective-dates), Cost Explorer, budgets, trend chart, what-if simulator, unit economics | ✅ Done |
 | 3 | Full Shopify auto-sync — products+cost+stock, orders write line items + auto-decrement stock | ✅ Code done, functions deployed; **blocked on Omar creating a Shopify app** (not done yet) |
 | 4 | Double-entry General Ledger — chart of accounts, atomic RPC, Trial Balance, GL statements, auto-posting | ✅ Done — **`gl_schema.sql` needs Omar to run it** |
-| 5 | Finance 2.0 — budgeting, goals, 13-week cash-flow forecast, month-close, drawings tracking, profitability reports | ⏳ Next |
+| 5 | Finance 2.0 — budgeting, goals, 13-week cash-flow forecast, month-close, drawings tracking, profitability reports | ✅ Done — **`finance2_schema.sql` needs Omar to run it** |
 | 6 | Procurement & Purchasing — suppliers, POs, receiving, AP, reorder suggestions | Not started |
 | 7 | Sales, AR, Returns & COD reconciliation | Not started |
 | 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | Not started |
@@ -400,3 +400,25 @@ off to Omar — not yet confirmed run.**
 This file — created retroactively to capture the accumulated architecture
 decisions and gotchas from an already-substantial build, before continuing into
 Phase 5.
+
+#### 16. Finance 2.0 (FEATURE / ERP-P5)
+New `forecast.ts` pure engine (tested — 5 cases) for a 13-week cash-flow
+projection: starting balance from capital accounts, avg daily net cash from
+trailing 30 days, weekly-equivalent recurring fixed cost rules. `period_closes`
+table + one-time "Close month" snapshot button (informational only — does
+**not** lock edits to closed periods, a deliberate scope cut to avoid invasive
+checks across many write paths for uncertain payoff right now). New **Goals**
+tab (reuses the original `business_goals`/`goalsApi` — no new table needed):
+monthly targets for revenue/net profit/orders/MER with live progress bars.
+New **Profitability** tab: profit-by-product ranking (units sold × contribution
+margin per unit), 6-month P&L trend chart, 13-week cash-flow forecast chart
+with a "cash runs out in week N" warning badge, month-close history. **Owner
+Drawings** quick action added to Capital tab (already had GL mapping to
+Owner's Drawings 3030 from Phase 4, just needed a UI button) + "Drawn this
+year" stat. **Deliberately skipped** from the original Phase 5 scope:
+"recurring transactions auto-post" — the Cost Rules Engine already accrues
+fixed costs into the profit calculation every period without a real cash
+transaction; auto-posting phantom GL entries for the same rules on a timer
+would double-count against real Capital-recorded payments and wasn't a good
+fit for this architecture. **`finance2_schema.sql` written and handed off —
+not yet confirmed run.**
