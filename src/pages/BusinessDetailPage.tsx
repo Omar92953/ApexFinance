@@ -17,6 +17,7 @@ import ProductsTab from '@/components/inventory/ProductsTab';
 import ManufacturingTab from '@/components/inventory/ManufacturingTab';
 import UnitEconomicsTab from '@/components/inventory/UnitEconomicsTab';
 import CapitalTab from '@/components/finance/CapitalTab';
+import GeneralLedgerTab from '@/components/finance/GeneralLedgerTab';
 import { cn } from '@/lib/utils';
 
 const SECTIONS = [
@@ -36,6 +37,7 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
     { key: 'costs', label: 'Costs' },
     { key: 'balance', label: 'Assets & Liabilities' },
     { key: 'statements', label: 'Statements' },
+    { key: 'ledger', label: 'General Ledger' },
   ],
   inventory: [
     { key: 'products', label: 'Products' },
@@ -158,6 +160,7 @@ export default function BusinessDetailPage() {
       {section === 'finance' && activeSubTab === 'costs' && <CostsTab business={business} start={start} end={end} onChanged={refresh} />}
       {section === 'finance' && activeSubTab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
       {section === 'finance' && activeSubTab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
+      {section === 'finance' && activeSubTab === 'ledger' && <GeneralLedgerTab business={business} start={start} end={end} />}
 
       {section === 'inventory' && activeSubTab === 'products' && <ProductsTab business={business} />}
       {section === 'inventory' && activeSubTab === 'unit-economics' && <UnitEconomicsTab business={business} start={start} end={end} />}

@@ -90,7 +90,9 @@ export const businessesApi = {
   },
   async create(b: Partial<Business>): Promise<Business> {
     const user_id = await uid();
-    return unwrap(await supabase.from('businesses').insert({ ...b, user_id }).select().single());
+    const created: Business = unwrap(await supabase.from('businesses').insert({ ...b, user_id }).select().single());
+    try { await glApi.seedDefaultChart(created.id); } catch { /* GL is additive — a business is still usable without it */ }
+    return created;
   },
   async update(id: string, patch: Partial<Business>): Promise<Business> {
     return unwrap(
@@ -701,6 +703,7 @@ export interface CapitalAccount {
   business_id: string;
   name: string;
   account_type: string;
+  gl_account_id?: string | null;
   opening_balance: number;
   current_balance: number;
   currency?: string;
@@ -727,32 +730,77 @@ export const capitalApi = {
   async createAccount(a: Partial<CapitalAccount>): Promise<CapitalAccount> {
     const user_id = await uid();
     const opening = Number(a.opening_balance) || 0;
-    return unwrap(await supabase.from('capital_accounts').insert({ ...a, user_id, opening_balance: opening, current_balance: opening }).select().single());
+    const created: CapitalAccount = unwrap(await supabase.from('capital_accounts').insert({ ...a, user_id, opening_balance: opening, current_balance: opening }).select().single());
+    try { await glApi.ensureCapitalAccountGL(created.business_id, created.id, created.name); } catch { /* GL is additive */ }
+    return created;
   },
   async removeAccount(id: string): Promise<void> {
     const { error } = await supabase.from('capital_accounts').delete().eq('id', id);
     if (error) throw error;
   },
-  // Records a transaction (signed amount) and updates the account's running balance.
+  // Records a transaction (signed amount), updates the account's running balance,
+  // and — unless it's a manufacturing/transfer leg (posted by their own callers
+  // with more specific context) — auto-posts a balanced entry to the General Ledger.
   async recordTransaction(t: {
     business_id: string; account_id: string; transaction_type: string; amount: number;
     category?: string; description?: string; date?: string; reference_type?: string; reference_id?: string;
   }): Promise<void> {
     const user_id = await uid();
-    const acct = unwrap(await supabase.from('capital_accounts').select('current_balance').eq('id', t.account_id).single()) as { current_balance: number };
+    const acct = unwrap(await supabase.from('capital_accounts').select('current_balance, gl_account_id').eq('id', t.account_id).single()) as { current_balance: number; gl_account_id: string | null };
     const running = (Number(acct.current_balance) || 0) + t.amount;
-    const { error } = await supabase.from('capital_transactions').insert({
+    const tx: { id: string } = unwrap(await supabase.from('capital_transactions').insert({
       user_id, business_id: t.business_id, account_id: t.account_id, transaction_type: t.transaction_type,
       amount: t.amount, running_balance: running, category: t.category ?? null, description: t.description ?? null,
       date: t.date ?? new Date().toISOString().slice(0, 10), reference_type: t.reference_type ?? null, reference_id: t.reference_id ?? null,
-    });
-    if (error) throw error;
+    }).select('id').single());
     const { error: uerr } = await supabase.from('capital_accounts').update({ current_balance: running }).eq('id', t.account_id);
     if (uerr) throw uerr;
+
+    if (acct.gl_account_id && t.category !== 'manufacturing' && t.category !== 'transfer') {
+      try {
+        const amt = Math.abs(t.amount);
+        const glAccountId = acct.gl_account_id;
+        let otherCode: string | null;
+        let debitIsCapital: boolean;
+        if (t.category === 'profit') { otherCode = '3020'; debitIsCapital = true; }
+        else if (t.transaction_type === 'expense') { otherCode = CATEGORY_TO_CODE[t.category ?? ''] ?? '5120'; debitIsCapital = false; }
+        else if (t.transaction_type === 'income') { otherCode = CATEGORY_TO_CODE[t.category ?? ''] ?? '4030'; debitIsCapital = true; }
+        else if (t.transaction_type === 'deposit') { otherCode = '3010'; debitIsCapital = true; }
+        else if (t.transaction_type === 'withdrawal') { otherCode = '3030'; debitIsCapital = false; }
+        else { otherCode = null; debitIsCapital = true; }
+
+        if (otherCode) {
+          const other = await glApi.findByCode(t.business_id, otherCode);
+          if (other) {
+            await glApi.postEntry({
+              business_id: t.business_id, date: t.date, source_type: 'capital_transaction', source_id: tx.id,
+              memo: t.description || `${t.transaction_type}${t.category ? ' · ' + t.category : ''}`,
+              lines: debitIsCapital
+                ? [{ account_id: glAccountId, debit: amt }, { account_id: other.id, credit: amt }]
+                : [{ account_id: other.id, debit: amt }, { account_id: glAccountId, credit: amt }],
+            });
+          }
+        }
+      } catch { /* GL posting is additive — don't block the cash transaction if it fails */ }
+    }
   },
   async transfer(businessId: string, fromId: string, toId: string, amount: number, description?: string): Promise<void> {
     await this.recordTransaction({ business_id: businessId, account_id: fromId, transaction_type: 'transfer', amount: -Math.abs(amount), category: 'transfer', description: description ?? 'Transfer out' });
     await this.recordTransaction({ business_id: businessId, account_id: toId, transaction_type: 'transfer', amount: Math.abs(amount), category: 'transfer', description: description ?? 'Transfer in' });
+    try {
+      const [fromAcct, toAcct] = await Promise.all([
+        supabase.from('capital_accounts').select('gl_account_id').eq('id', fromId).single(),
+        supabase.from('capital_accounts').select('gl_account_id').eq('id', toId).single(),
+      ]);
+      const fromGl = fromAcct.data?.gl_account_id, toGl = toAcct.data?.gl_account_id;
+      if (fromGl && toGl) {
+        await glApi.postEntry({
+          business_id: businessId, source_type: 'transfer', source_id: null,
+          memo: description || 'Transfer between accounts',
+          lines: [{ account_id: toGl, debit: Math.abs(amount) }, { account_id: fromGl, credit: Math.abs(amount) }],
+        });
+      }
+    } catch { /* GL posting is additive */ }
   },
   async listTransactions(businessId: string, limit = 200): Promise<CapitalTransaction[]> {
     return unwrap(await supabase.from('capital_transactions').select('*').eq('business_id', businessId).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(limit)) || [];
@@ -814,13 +862,29 @@ export const manufacturingApi = {
       reference_type: 'manufacturing_batch', reference_id: batch.id, date: input.date ?? new Date().toISOString().slice(0, 10),
     });
 
-    // Debit capital
+    // Debit capital, then post Dr Inventory / Cr [capital account's GL] — the batch
+    // itself posts this (rather than recordTransaction's generic mapper) since it
+    // knows the money became inventory, not an expense.
     if (input.accountId && totalCost) {
       await capitalApi.recordTransaction({
         business_id: input.business_id, account_id: input.accountId, transaction_type: 'manufacturing',
         amount: -Math.abs(totalCost), category: 'manufacturing', description: `Manufacturing batch (${qty} units)`,
         reference_type: 'manufacturing_batch', reference_id: batch.id, date: input.date,
       });
+      try {
+        const [inventoryAccount, capAcct] = await Promise.all([
+          glApi.findByCode(input.business_id, '1060'),
+          supabase.from('capital_accounts').select('gl_account_id').eq('id', input.accountId).single(),
+        ]);
+        const capGl = capAcct.data?.gl_account_id;
+        if (inventoryAccount && capGl) {
+          await glApi.postEntry({
+            business_id: input.business_id, date: input.date, source_type: 'manufacturing', source_id: batch.id,
+            memo: `Manufacturing batch (${qty} units)`,
+            lines: [{ account_id: inventoryAccount.id, debit: totalCost }, { account_id: capGl, credit: totalCost }],
+          });
+        }
+      } catch { /* GL posting is additive */ }
     }
 
     // Update variant WAC + stock
@@ -830,6 +894,219 @@ export const manufacturingApi = {
     const newQty = existQty + qty;
     const newCost = newQty > 0 ? (existQty * existCost + qty * costPerUnit) / newQty : costPerUnit;
     await supabase.from('product_variants').update({ inventory_qty: newQty, cost_per_item: newCost, updated_at: new Date().toISOString() }).eq('id', input.variant_id);
+  },
+};
+
+// ---------- General Ledger (double-entry, Phase 4) ----------
+import { isBalanced, computeTrialBalance, type TrialBalance, type TrialBalanceLine, type AccountType } from '@/finance/ledger';
+
+export interface ChartAccount {
+  id: string;
+  business_id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  subtype: string | null;
+  is_active: boolean;
+}
+
+export interface JournalEntryRow {
+  id: string;
+  business_id: string;
+  date: string;
+  memo: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  created_at: string;
+}
+
+export interface JournalLineRow {
+  id: string;
+  journal_entry_id: string;
+  account_id: string;
+  debit: number;
+  credit: number;
+  description: string | null;
+  account?: { code: string; name: string; type: AccountType };
+}
+
+// Kept in sync with the default chart seeded by supabase/gl_schema.sql — used
+// to auto-seed new businesses created after that migration ran.
+const DEFAULT_CHART: Array<{ code: string; name: string; type: AccountType; subtype: string | null }> = [
+  { code: '1010', name: 'Cash', type: 'asset', subtype: 'cash' },
+  { code: '1020', name: 'Bank', type: 'asset', subtype: 'cash' },
+  { code: '1030', name: 'Mobile Wallet', type: 'asset', subtype: 'cash' },
+  { code: '1040', name: 'COD Receivable', type: 'asset', subtype: 'current' },
+  { code: '1050', name: 'Accounts Receivable', type: 'asset', subtype: 'current' },
+  { code: '1060', name: 'Inventory', type: 'asset', subtype: 'current' },
+  { code: '1070', name: 'Prepaid Expenses', type: 'asset', subtype: 'current' },
+  { code: '1080', name: 'Equipment', type: 'asset', subtype: 'fixed' },
+  { code: '2010', name: 'Accounts Payable', type: 'liability', subtype: 'current' },
+  { code: '2020', name: 'Credit Card Payable', type: 'liability', subtype: 'current' },
+  { code: '2030', name: 'Taxes Payable', type: 'liability', subtype: 'current' },
+  { code: '2040', name: 'Accrued Expenses', type: 'liability', subtype: 'current' },
+  { code: '2050', name: 'Business Loans', type: 'liability', subtype: 'long_term' },
+  { code: '3010', name: "Owner's Equity", type: 'equity', subtype: null },
+  { code: '3020', name: 'Retained Earnings', type: 'equity', subtype: null },
+  { code: '3030', name: "Owner's Drawings", type: 'equity', subtype: null },
+  { code: '4010', name: 'Sales Revenue', type: 'income', subtype: null },
+  { code: '4020', name: 'Shipping Income', type: 'income', subtype: null },
+  { code: '4030', name: 'Other Income', type: 'income', subtype: null },
+  { code: '5010', name: 'Cost of Goods Sold', type: 'expense', subtype: 'cogs' },
+  { code: '5020', name: 'Fulfillment & Shipping', type: 'expense', subtype: 'fulfillment' },
+  { code: '5030', name: 'Ad Spend - Meta', type: 'expense', subtype: 'marketing' },
+  { code: '5040', name: 'Ad Spend - TikTok', type: 'expense', subtype: 'marketing' },
+  { code: '5050', name: 'Ad Spend - Google', type: 'expense', subtype: 'marketing' },
+  { code: '5060', name: 'Marketing - Other', type: 'expense', subtype: 'marketing' },
+  { code: '5070', name: 'Salaries & Wages', type: 'expense', subtype: 'overhead' },
+  { code: '5080', name: 'Rent', type: 'expense', subtype: 'overhead' },
+  { code: '5090', name: 'Software & Tools', type: 'expense', subtype: 'overhead' },
+  { code: '5100', name: 'Courier & COD Fees', type: 'expense', subtype: 'fees' },
+  { code: '5110', name: 'Payment Gateway Fees', type: 'expense', subtype: 'fees' },
+  { code: '5120', name: 'Overhead - Other', type: 'expense', subtype: 'overhead' },
+  { code: '5130', name: 'Bank & Interest Charges', type: 'expense', subtype: 'fees' },
+];
+
+// Maps a capital-transaction category (including the Cost Rules categories) to
+// the expense/income account it auto-posts against.
+const CATEGORY_TO_CODE: Record<string, string> = {
+  cogs: '5010', fulfillment: '5020', marketing: '5060', overhead: '5120', fees: '5110',
+  sales: '4010', shipping: '4020',
+};
+
+export const glApi = {
+  async listAccounts(businessId: string): Promise<ChartAccount[]> {
+    return unwrap(await supabase.from('chart_of_accounts').select('*').eq('business_id', businessId).eq('is_active', true).order('code')) || [];
+  },
+  async findByCode(businessId: string, code: string): Promise<ChartAccount | null> {
+    return (await supabase.from('chart_of_accounts').select('*').eq('business_id', businessId).eq('code', code).maybeSingle()).data ?? null;
+  },
+  // Idempotent — does nothing if the business already has any accounts.
+  async seedDefaultChart(businessId: string): Promise<void> {
+    const existing = await this.listAccounts(businessId);
+    if (existing.length > 0) return;
+    const user_id = await uid();
+    const { error } = await supabase.from('chart_of_accounts').insert(DEFAULT_CHART.map((a) => ({ ...a, business_id: businessId, user_id })));
+    if (error) throw error;
+  },
+  // Creates a dedicated Cash-type GL account for a capital account and links it (1:1).
+  async ensureCapitalAccountGL(businessId: string, capitalAccountId: string, name: string): Promise<string> {
+    const user_id = await uid();
+    const code = `CASH-${capitalAccountId.slice(0, 8)}`;
+    const created: ChartAccount = unwrap(await supabase.from('chart_of_accounts')
+      .insert({ user_id, business_id: businessId, code, name, type: 'asset', subtype: 'cash' }).select().single());
+    await supabase.from('capital_accounts').update({ gl_account_id: created.id }).eq('id', capitalAccountId);
+    return created.id;
+  },
+  // The only write path into the ledger — validates balance client-side for a
+  // fast error, then posts via the RPC, which re-validates atomically server-side.
+  async postEntry(input: {
+    business_id: string; date?: string; memo?: string; source_type?: string; source_id?: string | null;
+    lines: Array<{ account_id: string; debit?: number; credit?: number; description?: string }>;
+  }): Promise<string> {
+    if (!isBalanced(input.lines)) throw new Error('Journal entry is not balanced (debits must equal credits).');
+    const user_id = await uid();
+    const { data, error } = await supabase.rpc('post_journal_entry', {
+      p_business_id: input.business_id, p_user_id: user_id,
+      p_date: input.date ?? new Date().toISOString().slice(0, 10),
+      p_memo: input.memo ?? null, p_source_type: input.source_type ?? 'manual', p_source_id: input.source_id ?? null,
+      p_lines: input.lines.map((l) => ({ account_id: l.account_id, debit: l.debit ?? 0, credit: l.credit ?? 0, description: l.description ?? null })),
+    });
+    if (error) throw error;
+    return data as string;
+  },
+  async listEntries(businessId: string, opts: { start?: string; end?: string; limit?: number } = {}): Promise<Array<JournalEntryRow & { lines: JournalLineRow[] }>> {
+    let q = supabase.from('journal_entries').select('*').eq('business_id', businessId).order('date', { ascending: false }).order('created_at', { ascending: false });
+    if (opts.start) q = q.gte('date', opts.start);
+    if (opts.end) q = q.lte('date', opts.end);
+    if (opts.limit) q = q.limit(opts.limit);
+    const entries: JournalEntryRow[] = unwrap(await q) || [];
+    if (!entries.length) return [];
+    const ids = entries.map((e) => e.id);
+    const lines: JournalLineRow[] = unwrap(
+      await supabase.from('journal_lines').select('*, account:chart_of_accounts(code,name,type)').in('journal_entry_id', ids),
+    ) || [];
+    const byEntry = new Map<string, JournalLineRow[]>();
+    for (const l of lines) { const arr = byEntry.get(l.journal_entry_id) ?? []; arr.push(l); byEntry.set(l.journal_entry_id, arr); }
+    return entries.map((e) => ({ ...e, lines: byEntry.get(e.id) ?? [] }));
+  },
+  async getTrialBalance(businessId: string, asOfDate?: string): Promise<TrialBalance> {
+    let q = supabase.from('journal_entries').select('id').eq('business_id', businessId);
+    if (asOfDate) q = q.lte('date', asOfDate);
+    const entries: Array<{ id: string }> = unwrap(await q) || [];
+    if (!entries.length) return computeTrialBalance([]);
+    const ids = entries.map((e) => e.id);
+    const rows: any[] = unwrap(
+      await supabase.from('journal_lines').select('debit, credit, account:chart_of_accounts(id,code,name,type,subtype)').in('journal_entry_id', ids),
+    ) || [];
+    const lines: TrialBalanceLine[] = rows.filter((r) => r.account).map((r) => ({
+      account_id: r.account.id, account_code: r.account.code, account_name: r.account.name,
+      account_type: r.account.type, account_subtype: r.account.subtype,
+      debit: Number(r.debit) || 0, credit: Number(r.credit) || 0,
+    }));
+    return computeTrialBalance(lines);
+  },
+  // One-time conversion of legacy manual Assets & Liabilities (financial_inputs)
+  // and each capital account's opening balance into proper opening journal
+  // entries. Safe to click more than once — already-posted entries are skipped.
+  async postOpeningBalances(businessId: string): Promise<{ posted: number; skipped: number }> {
+    const [accounts, existingEntries, capitalAccounts, inputs] = await Promise.all([
+      this.listAccounts(businessId),
+      supabase.from('journal_entries').select('source_id').eq('business_id', businessId).eq('source_type', 'opening_balance'),
+      capitalApi.listAccounts(businessId),
+      financialInputsApi.list(businessId),
+    ]);
+    const byCode = new Map(accounts.map((a) => [a.code, a]));
+    const equity = byCode.get('3010');
+    if (!equity) throw new Error('Chart of accounts not seeded for this business yet.');
+    const alreadyPosted = new Set(((existingEntries.data as Array<{ source_id: string | null }>) || []).map((e) => e.source_id));
+
+    let posted = 0, skipped = 0;
+
+    // 1) Each capital account's opening balance: Dr [account's GL] / Cr Owner's Equity.
+    for (const acct of capitalAccounts) {
+      if (alreadyPosted.has(acct.id)) { skipped++; continue; }
+      const opening = Number(acct.opening_balance) || 0;
+      if (!opening || !acct.gl_account_id) continue;
+      await this.postEntry({
+        business_id: businessId, source_type: 'opening_balance', source_id: acct.id,
+        memo: `Opening balance — ${acct.name}`,
+        lines: opening >= 0
+          ? [{ account_id: acct.gl_account_id, debit: Math.abs(opening) }, { account_id: equity.id, credit: Math.abs(opening) }]
+          : [{ account_id: equity.id, debit: Math.abs(opening) }, { account_id: acct.gl_account_id, credit: Math.abs(opening) }],
+      });
+      posted++;
+    }
+
+    // 2) Legacy financial_inputs balance-sheet fields → one combined entry, plugged to equity.
+    if (alreadyPosted.has(null)) { skipped++; }
+    else {
+      const FIELD_CODE: Record<string, string> = {
+        'A/R Payouts': '1050', 'Inventory Value': '1060', 'Prepaid Credits': '1070', 'Equipment': '1080',
+        'Supplier Payable': '2010', 'Credit Card Balance': '2020', 'Tax Payable': '2030', 'Accrued Expenses': '2040',
+        'Business Loans': '2050', 'Owner Investment': '3010',
+      };
+      const DEBIT_FIELDS = new Set(['A/R Payouts', 'Inventory Value', 'Prepaid Credits', 'Equipment']);
+      const lines: Array<{ account_id: string; debit?: number; credit?: number; description?: string }> = [];
+      let totalDebit = 0, totalCredit = 0;
+      for (const inp of inputs) {
+        const code = FIELD_CODE[inp.name];
+        const account = code ? byCode.get(code) : null;
+        const value = Number(inp.value) || 0;
+        if (!account || !value) continue;
+        if (DEBIT_FIELDS.has(inp.name)) { lines.push({ account_id: account.id, debit: value, description: inp.name }); totalDebit += value; }
+        else { lines.push({ account_id: account.id, credit: value, description: inp.name }); totalCredit += value; }
+      }
+      if (lines.length) {
+        const diff = Math.round((totalDebit - totalCredit) * 100) / 100;
+        if (diff > 0) lines.push({ account_id: equity.id, credit: diff, description: "Plug to Owner's Equity" });
+        else if (diff < 0) lines.push({ account_id: equity.id, debit: -diff, description: "Plug to Owner's Equity" });
+        await this.postEntry({ business_id: businessId, source_type: 'opening_balance', source_id: null, memo: 'Opening balances from Assets & Liabilities', lines });
+        posted++;
+      }
+    }
+
+    return { posted, skipped };
   },
 };
 
