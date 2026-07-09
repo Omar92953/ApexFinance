@@ -5,10 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'EGP'];
-
 export default function SettingsPage() {
-  const { currency, theme, setCurrency, setTheme } = useSettingsStore();
+  const { theme, setTheme } = useSettingsStore();
   const { user, signOut } = useAuthStore();
 
   return (
@@ -20,12 +18,10 @@ export default function SettingsPage() {
           <h3 className="text-sm font-semibold mb-4">Preferences</h3>
           <div className="flex items-center justify-between py-2">
             <div>
-              <Label>Default currency</Label>
-              <p className="text-xs text-muted-foreground">Used for the global overview.</p>
+              <Label>Currency</Label>
+              <p className="text-xs text-muted-foreground">Apex Business Manager runs on EGP only.</p>
             </div>
-            <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <span className="text-sm font-medium">EGP</span>
           </div>
           <div className="flex items-center justify-between py-2 border-t border-border">
             <div>

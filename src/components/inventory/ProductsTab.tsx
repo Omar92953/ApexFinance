@@ -8,6 +8,17 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { cn, formatCurrency } from '@/lib/utils';
 import CostBreakdownDialog from './CostBreakdownDialog';
+import { classifyStockHealth, computeAvgDailyUnits, type StockHealth } from '@/finance/stock-health';
+
+const STOCK_TONE: Record<StockHealth['status'], string> = {
+  out_of_stock: 'bg-destructive/15 text-destructive',
+  below_safe_level: 'bg-warning/15 text-warning',
+  healthy: 'bg-success/15 text-success',
+  overstocked: 'bg-chart-4/15 text-chart-4',
+  no_sales_data: 'bg-muted text-muted-foreground',
+};
+
+const STOCK_WINDOW_DAYS = 30;
 
 export default function ProductsTab({ business }: { business: Business }) {
   const cur = business.currency ?? 'USD';
@@ -26,16 +37,27 @@ export default function ProductsTab({ business }: { business: Business }) {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ title: '', sku: '', price: '', cost: '', stock: '' });
   const [breakdownFor, setBreakdownFor] = useState<ProductVariant | null>(null);
+  const [unitsSold, setUnitsSold] = useState<Record<string, number>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [p, v] = await Promise.all([productsApi.listProducts(business.id), productsApi.listVariants(business.id)]);
-      setProducts(p); setVariants(v);
+      const [p, v, sold] = await Promise.all([
+        productsApi.listProducts(business.id),
+        productsApi.listVariants(business.id),
+        productsApi.unitsSoldBySku(business.id, STOCK_WINDOW_DAYS),
+      ]);
+      setProducts(p); setVariants(v); setUnitsSold(sold);
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [business.id]);
+
+  const stockHealthFor = (v: ProductVariant): StockHealth => {
+    const sold = (v.sku && unitsSold[v.sku]) || 0;
+    const avgDaily = computeAvgDailyUnits(sold, STOCK_WINDOW_DAYS);
+    return classifyStockHealth(Number(v.inventory_qty) || 0, avgDaily);
+  };
 
   const productTitle = useMemo(() => new Map(products.map((p) => [p.id, p.title])), [products]);
 
@@ -166,6 +188,7 @@ export default function ProductsTab({ business }: { business: Business }) {
                   <th className="px-4 py-2.5 font-medium text-right">Cost</th>
                   <th className="px-4 py-2.5 font-medium text-right">Margin</th>
                   <th className="px-4 py-2.5 font-medium text-right">Stock</th>
+                  <th className="px-4 py-2.5 font-medium">Stock Health</th>
                   <th className="px-2 py-2.5" />
                   <th className="px-2 py-2.5" />
                 </tr>
@@ -180,6 +203,17 @@ export default function ProductsTab({ business }: { business: Business }) {
                     <td className="px-2 py-2 text-right">{cell(v, 'cost', Number(v.cost_per_item) || 0)}</td>
                     <td className={`px-4 py-2 text-right tabular-nums ${margin(v) < 0 ? 'text-destructive' : margin(v) >= 50 ? 'text-success' : ''}`}>{margin(v).toFixed(0)}%</td>
                     <td className="px-2 py-2 text-right">{cell(v, 'stock', Number(v.inventory_qty) || 0)}</td>
+                    <td className="px-4 py-2">
+                      {(() => {
+                        const h = stockHealthFor(v);
+                        return (
+                          <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium', STOCK_TONE[h.status])}>
+                            {h.label}
+                            {h.daysOfCover !== null && <span className="opacity-70">· {h.daysOfCover.toFixed(0)}d</span>}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-2 py-2 text-right"><button onClick={() => setBreakdownFor(v)} title="Cost breakdown" className="text-muted-foreground hover:text-foreground"><ListTree className="h-3.5 w-3.5" /></button></td>
                     <td className="px-2 py-2 text-right"><button onClick={async () => { if (confirm('Delete this variant?')) { await productsApi.removeVariant(v.id); load(); } }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button></td>
                   </tr>

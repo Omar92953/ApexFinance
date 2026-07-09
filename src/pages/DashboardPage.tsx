@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, ArrowRight } from 'lucide-react';
 import { useBusinessStore } from '@/stores/businessStore';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { computeBusinessProfit } from '@/finance/compute';
 import { ProfitEngine, type ProfitCalculation } from '@/finance/profit-engine';
 import KpiCard from '@/components/shared/KpiCard';
@@ -20,7 +19,7 @@ function monthRange() {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { businesses, loaded, fetch } = useBusinessStore();
-  const currency = useSettingsStore((s) => s.currency);
+  const currency = 'EGP';
   const { start, end } = useMemo(monthRange, []);
   const [calcs, setCalcs] = useState<Array<{ name: string; id: string; calc: ProfitCalculation }>>([]);
   const [computing, setComputing] = useState(false);
@@ -61,9 +60,9 @@ export default function DashboardPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6">
             <KpiCard label="Net Profit" value={formatCurrency(t.netProfit, currency)} sub={`${t.profitMargin.toFixed(1)}% margin`} tone={t.netProfit >= 0 ? 'positive' : 'negative'} />
-            <KpiCard label="Your Profit" value={formatCurrency(t.userProfit, currency)} sub="Across all businesses" tone="positive" delay={40} />
-            <KpiCard label="Net Revenue" value={formatCurrency(t.netSales, currency)} sub={`Ad spend ${formatCurrency(t.totalAdSpend, currency)}`} delay={80} />
-            <KpiCard label="Blended ROAS" value={`${t.roas.toFixed(2)}x`} sub={`Break-even ${t.breakevenRoas.toFixed(2)}x`} tone={t.roas >= t.breakevenRoas ? 'positive' : 'negative'} delay={120} />
+            <KpiCard label="Net Revenue" value={formatCurrency(t.netSales, currency)} sub={`Ad spend ${formatCurrency(t.totalAdSpend, currency)}`} delay={40} />
+            <KpiCard label="Blended ROAS" value={`${t.roas.toFixed(2)}x`} sub={`Break-even ${t.breakevenRoas.toFixed(2)}x`} tone={t.roas >= t.breakevenRoas ? 'positive' : 'negative'} delay={80} />
+            <KpiCard label="MER" value={`${(t.totalAdSpend > 0 ? t.grossSales / t.totalAdSpend : 0).toFixed(2)}x`} sub="Gross sales ÷ ad spend" delay={120} />
           </div>
 
           <div className="rounded-xl border border-border bg-card overflow-hidden">

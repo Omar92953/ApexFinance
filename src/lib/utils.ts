@@ -17,7 +17,7 @@ const CURRENCY_CONFIG: Record<string, { locale: string; currency: string }> = {
 // Currencies that display as "12,500 CODE" (number first, code after)
 const TRAILING_CODE_CURRENCIES = ['EGP', 'SAR', 'AED'];
 
-export function formatCurrency(value: number, currency = 'USD', precise = false): string {
+export function formatCurrency(value: number, currency = 'EGP', precise = false): string {
   const decimals = precise ? 2 : 0;
   if (TRAILING_CODE_CURRENCIES.includes(currency)) {
     const formatted = new Intl.NumberFormat('en-US', {
@@ -35,7 +35,7 @@ export function formatCurrency(value: number, currency = 'USD', precise = false)
   }).format(precise ? value : Math.round(value));
 }
 
-export function formatCurrencyRounded(value: number, currency = 'USD'): string {
+export function formatCurrencyRounded(value: number, currency = 'EGP'): string {
   if (TRAILING_CODE_CURRENCIES.includes(currency)) {
     const formatted = new Intl.NumberFormat('en-US', {
       minimumFractionDigits: 0,
@@ -67,7 +67,7 @@ export function formatCompact(value: number): string {
   }).format(value);
 }
 
-export function getCurrencySymbol(currency = 'USD'): string {
+export function getCurrencySymbol(currency = 'EGP'): string {
   const symbols: Record<string, string> = {
     USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', SAR: '﷼', EGP: 'E£',
   };

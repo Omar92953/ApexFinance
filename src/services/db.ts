@@ -490,6 +490,22 @@ export const productsApi = {
     const { error } = await supabase.from('product_variants').update({ [field]: value, updated_at: new Date().toISOString() }).in('id', ids);
     if (error) throw error;
   },
+  // Units sold per SKU in a trailing window — feeds stock-health classification.
+  async unitsSoldBySku(businessId: string, days = 30): Promise<Record<string, number>> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const { data } = await supabase
+      .from('order_line_items')
+      .select('sku, quantity')
+      .eq('business_id', businessId)
+      .gte('order_date', since.toISOString().slice(0, 10));
+    const map: Record<string, number> = {};
+    for (const r of (data as Array<{ sku: string | null; quantity: number }> | null) || []) {
+      if (!r.sku) continue;
+      map[r.sku] = (map[r.sku] || 0) + (Number(r.quantity) || 0);
+    }
+    return map;
+  },
 
   // Import Shopify's standard product CSV export.
   async importFromShopifyCsv(businessId: string, csvText: string): Promise<{ products: number; variants: number }> {

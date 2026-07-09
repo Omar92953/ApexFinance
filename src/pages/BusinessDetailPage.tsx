@@ -16,23 +16,46 @@ import TasksTab from '@/components/crm/TasksTab';
 import ProductsTab from '@/components/inventory/ProductsTab';
 import ManufacturingTab from '@/components/inventory/ManufacturingTab';
 import CapitalTab from '@/components/finance/CapitalTab';
+import { cn } from '@/lib/utils';
 
-const TABS = [
-  { key: 'overview', label: 'Overview', group: 'Finance' },
-  { key: 'capital', label: 'Capital', group: 'Finance' },
-  { key: 'data', label: 'Data', group: 'Finance' },
-  { key: 'costs', label: 'Costs', group: 'Finance' },
-  { key: 'balance', label: 'Assets & Liabilities', group: 'Finance' },
-  { key: 'statements', label: 'Statements', group: 'Finance' },
-  { key: 'products', label: 'Products', group: 'Inventory' },
-  { key: 'manufacturing', label: 'Manufacturing', group: 'Inventory' },
-  { key: 'customers', label: 'Customers', group: 'CRM' },
-  { key: 'deals', label: 'Deals', group: 'CRM' },
-  { key: 'tasks', label: 'Tasks', group: 'CRM' },
-  { key: 'integrations', label: 'Integrations', group: 'Setup' },
+const SECTIONS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'finance', label: 'Finance' },
+  { key: 'inventory', label: 'Inventory' },
+  { key: 'crm', label: 'CRM' },
+  { key: 'setup', label: 'Setup' },
 ] as const;
 
-const GROUPS = ['Finance', 'Inventory', 'CRM', 'Setup'] as const;
+type SectionKey = (typeof SECTIONS)[number]['key'];
+
+const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: string }[]> = {
+  finance: [
+    { key: 'capital', label: 'Capital' },
+    { key: 'data', label: 'Data' },
+    { key: 'costs', label: 'Costs' },
+    { key: 'balance', label: 'Assets & Liabilities' },
+    { key: 'statements', label: 'Statements' },
+  ],
+  inventory: [
+    { key: 'products', label: 'Products' },
+    { key: 'manufacturing', label: 'Manufacturing' },
+  ],
+  crm: [
+    { key: 'customers', label: 'Customers' },
+    { key: 'deals', label: 'Deals' },
+    { key: 'tasks', label: 'Tasks' },
+  ],
+  setup: [
+    { key: 'integrations', label: 'Integrations' },
+  ],
+};
+
+const DEFAULT_SUB_TAB: Record<Exclude<SectionKey, 'overview'>, string> = {
+  finance: 'capital',
+  inventory: 'products',
+  crm: 'customers',
+  setup: 'integrations',
+};
 
 function monthRange(): { start: string; end: string } {
   const now = new Date();
@@ -45,7 +68,8 @@ export default function BusinessDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [business, setBusiness] = useState<Business | null>(null);
-  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('overview');
+  const [section, setSection] = useState<SectionKey>('overview');
+  const [subTabBySection, setSubTabBySection] = useState<Record<string, string>>(DEFAULT_SUB_TAB);
   const init = useMemo(monthRange, []);
   const [start, setStart] = useState(init.start);
   const [end, setEnd] = useState(init.end);
@@ -67,6 +91,9 @@ export default function BusinessDetailPage() {
 
   if (!business) return <p className="text-muted-foreground">Loading…</p>;
 
+  const activeSubTab = section === 'overview' ? null : subTabBySection[section];
+  const setActiveSubTab = (key: string) => setSubTabBySection((s) => ({ ...s, [section]: key }));
+
   return (
     <div>
       <button onClick={() => navigate('/businesses')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
@@ -78,10 +105,7 @@ export default function BusinessDetailPage() {
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-lg">
             {business.name.charAt(0).toUpperCase()}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{business.name}</h1>
-            <p className="text-xs text-muted-foreground capitalize">{business.profit_model.replace(/_/g, ' ')} · {business.currency}</p>
-          </div>
+          <h1 className="text-2xl font-bold tracking-tight">{business.name}</h1>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2" />
@@ -90,39 +114,57 @@ export default function BusinessDetailPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-x-5 gap-y-2 border-b border-border mb-5">
-        {GROUPS.map((g) => (
-          <div key={g} className="flex flex-col">
-            <span className="px-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">{g}</span>
-            <div className="flex">
-              {TABS.filter((t) => t.group === g).map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                    tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Top-level sections */}
+      <div className="flex flex-wrap gap-1 mb-1">
+        {SECTIONS.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setSection(s.key)}
+            className={cn(
+              'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
+              section === s.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            {s.label}
+          </button>
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab profit={profit} business={business} />}
-      {tab === 'capital' && <CapitalTab business={business} profit={profit} />}
-      {tab === 'data' && <DataEntryTab business={business} start={start} end={end} onChanged={refresh} />}
-      {tab === 'costs' && <CostsTab business={business} onChanged={refresh} />}
-      {tab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
-      {tab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
-      {tab === 'products' && <ProductsTab business={business} />}
-      {tab === 'manufacturing' && <ManufacturingTab business={business} />}
-      {tab === 'customers' && <CustomersTab business={business} />}
-      {tab === 'deals' && <DealsTab business={business} />}
-      {tab === 'tasks' && <TasksTab business={business} />}
-      {tab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
+      {/* Sub-tabs for the active section (Overview has none) */}
+      {section !== 'overview' && (
+        <div className="flex flex-wrap gap-1 border-b border-border mb-5 mt-2">
+          {SUB_TABS[section].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveSubTab(t.key)}
+              className={cn(
+                'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                activeSubTab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {section === 'overview' && <div className="mb-5" />}
+
+      {section === 'overview' && <OverviewTab profit={profit} business={business} />}
+
+      {section === 'finance' && activeSubTab === 'capital' && <CapitalTab business={business} profit={profit} />}
+      {section === 'finance' && activeSubTab === 'data' && <DataEntryTab business={business} start={start} end={end} onChanged={refresh} />}
+      {section === 'finance' && activeSubTab === 'costs' && <CostsTab business={business} onChanged={refresh} />}
+      {section === 'finance' && activeSubTab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
+      {section === 'finance' && activeSubTab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
+
+      {section === 'inventory' && activeSubTab === 'products' && <ProductsTab business={business} />}
+      {section === 'inventory' && activeSubTab === 'manufacturing' && <ManufacturingTab business={business} />}
+
+      {section === 'crm' && activeSubTab === 'customers' && <CustomersTab business={business} />}
+      {section === 'crm' && activeSubTab === 'deals' && <DealsTab business={business} />}
+      {section === 'crm' && activeSubTab === 'tasks' && <TasksTab business={business} />}
+
+      {section === 'setup' && activeSubTab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { ProfitEngine, type ProfitConfig, type AdditionalCost } from './profit-e
 import type { Business, AdditionalCostRow } from '@/services/db';
 import { metricsApi, costsApi, productsApi, shippingApi } from '@/services/db';
 import { supabase } from '@/lib/supabase';
+import { computeLtvPredictions, type OrderRow } from './ltv-engine';
 
 export function daysBetween(start: string, end: string): number {
   return Math.max(1, Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1);
@@ -70,6 +71,34 @@ async function computeLandedCosts(business: Business, start: string, end: string
   return { cogsTotal, shippingCost };
 }
 
+// Automatically estimate LTV from real repeat-purchase history (order_line_items,
+// synced from Shopify), looking back 12 months from `end`. Returns null when
+// there isn't enough order history to estimate from — caller falls back to the
+// AOV-multiplier estimate baked into ProfitEngine.
+async function computeAutoLtv(business: Business, end: string): Promise<number | null> {
+  const lookbackStart = new Date(end);
+  lookbackStart.setFullYear(lookbackStart.getFullYear() - 1);
+  const { data } = await supabase
+    .from('order_line_items')
+    .select('order_id, order_date, total_price')
+    .eq('business_id', business.id)
+    .gte('order_date', lookbackStart.toISOString().slice(0, 10))
+    .lte('order_date', end);
+
+  const rows = (data as Array<{ order_id: string; order_date: string; total_price: number }> | null) || [];
+  if (!rows.length) return null;
+
+  const byOrder = new Map<string, OrderRow>();
+  for (const r of rows) {
+    const existing = byOrder.get(r.order_id);
+    if (existing) existing.order_value += Number(r.total_price) || 0;
+    else byOrder.set(r.order_id, { order_id: r.order_id, order_date: r.order_date, order_value: Number(r.total_price) || 0 });
+  }
+
+  const preds = computeLtvPredictions(Array.from(byOrder.values()));
+  return preds.hasData ? preds.ltv_365d : null;
+}
+
 // Fetch everything for a business over a date range and compute the profit.
 export async function computeBusinessProfit(business: Business, start: string, end: string) {
   const [metrics, costRows] = await Promise.all([
@@ -82,5 +111,10 @@ export async function computeBusinessProfit(business: Business, start: string, e
   const additionalCosts = buildAdditionalCosts(costRows, orders, units, days);
   const config = buildProfitConfig(business);
   const landed = await computeLandedCosts(business, start, end, orders, units);
-  return ProfitEngine.calculate(metrics, config, additionalCosts, landed);
+  const calc = ProfitEngine.calculate(metrics, config, additionalCosts, landed);
+
+  const autoLtv = await computeAutoLtv(business, end);
+  if (autoLtv !== null) calc.ltv = autoLtv;
+
+  return calc;
 }
