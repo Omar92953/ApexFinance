@@ -18,6 +18,10 @@ export default function CapitalTab({ business, profit }: { business: Business; p
   const [mode, setMode] = useState<Mode>(null);
   const [busy, setBusy] = useState(false);
   const [f, setF] = useState<any>({});
+  const [filterAccount, setFilterAccount] = useState('all');
+  const [filterType, setFilterType] = useState('all');
+  const [filterStart, setFilterStart] = useState('');
+  const [filterEnd, setFilterEnd] = useState('');
 
   const load = async () => {
     const [a, t] = await Promise.all([capitalApi.listAccounts(business.id), capitalApi.listTransactions(business.id)]);
@@ -27,6 +31,15 @@ export default function CapitalTab({ business, profit }: { business: Business; p
 
   const total = useMemo(() => accounts.reduce((s, a) => s + (Number(a.current_balance) || 0), 0), [accounts]);
   const acctName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '—';
+
+  const txTypes = useMemo(() => Array.from(new Set(txs.map((t) => t.transaction_type))), [txs]);
+  const filteredTxs = useMemo(() => txs.filter((t) => {
+    if (filterAccount !== 'all' && t.account_id !== filterAccount) return false;
+    if (filterType !== 'all' && t.transaction_type !== filterType) return false;
+    if (filterStart && t.date < filterStart) return false;
+    if (filterEnd && t.date > filterEnd) return false;
+    return true;
+  }), [txs, filterAccount, filterType, filterStart, filterEnd]);
 
   const open = (m: Mode) => {
     setF({ account_id: accounts[0]?.id, to_id: accounts[1]?.id, date: new Date().toISOString().slice(0, 10), amount: '', description: '', category: '', name: '', account_type: 'cash' });
@@ -98,14 +111,39 @@ export default function CapitalTab({ business, profit }: { business: Business; p
 
       {/* Ledger */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="border-b border-border px-5 py-3 text-sm font-semibold">Transaction log</div>
+        <div className="border-b border-border px-5 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold">Transaction log</span>
+            <span className="text-xs text-muted-foreground">{filteredTxs.length} of {txs.length}</span>
+          </div>
+          {txs.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <select className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>
+                <option value="all">All accounts</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <select className="h-8 rounded-md border border-input bg-background px-2 text-xs capitalize" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                <option value="all">All types</option>
+                {txTypes.map((t) => <option key={t} value={t} className="capitalize">{t}</option>)}
+              </select>
+              <Input type="date" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} className="h-8 w-36 text-xs" />
+              <span className="self-center text-xs text-muted-foreground">to</span>
+              <Input type="date" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} className="h-8 w-36 text-xs" />
+              {(filterAccount !== 'all' || filterType !== 'all' || filterStart || filterEnd) && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => { setFilterAccount('all'); setFilterType('all'); setFilterStart(''); setFilterEnd(''); }}>Clear</Button>
+              )}
+            </div>
+          )}
+        </div>
         {txs.length === 0 ? (
           <p className="px-5 py-4 text-sm text-muted-foreground">No transactions yet.</p>
+        ) : filteredTxs.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-muted-foreground">No transactions match these filters.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
-                {txs.map((t) => (
+                {filteredTxs.map((t) => (
                   <tr key={t.id} className="border-b border-border last:border-0">
                     <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">{t.date}</td>
                     <td className="px-4 py-2">{t.description || t.category || t.transaction_type}<span className="text-muted-foreground"> · {acctName(t.account_id)}</span></td>

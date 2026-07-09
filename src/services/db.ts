@@ -562,6 +562,45 @@ export const productsApi = {
   },
 };
 
+// ---------- Per-product cost breakdown (materials / labor / packaging / other) ----------
+// Reuses the legacy `product_cost_items` table (product_id stored as the
+// variant's uuid, as text). The line items are a UI convenience: saving
+// recomputes their sum and writes it to the variant's cost_per_item, which
+// remains the single source of truth the profit engine reads (WAC).
+export interface CostBreakdownItem {
+  id: string;
+  product_id: string; // variant id (text)
+  name: string;
+  category: string;   // materials | labor | packaging | other
+  value: number;
+}
+
+export const productCostItemsApi = {
+  async list(variantId: string): Promise<CostBreakdownItem[]> {
+    return unwrap(await supabase.from('product_cost_items').select('*').eq('product_id', variantId).eq('is_active', true).order('created_at')) || [];
+  },
+  async add(businessId: string, variantId: string, item: { name: string; category: string; value: number }): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('product_cost_items').insert({
+      user_id, business_id: businessId, product_id: variantId, name: item.name,
+      category: item.category, basis: 'per_unit', value: item.value, is_active: true,
+    });
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('product_cost_items').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Sum active line items and write the total to the variant's cost_per_item.
+  async applyToVariant(variantId: string): Promise<number> {
+    const items = await this.list(variantId);
+    const total = items.reduce((s, i) => s + (Number(i.value) || 0), 0);
+    const { error } = await supabase.from('product_variants').update({ cost_per_item: total, updated_at: new Date().toISOString() }).eq('id', variantId);
+    if (error) throw error;
+    return total;
+  },
+};
+
 // ---------- Shipping zones ----------
 export interface ShippingZone {
   id: string;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Upload, Plus, Search, Package, Trash2, Check } from 'lucide-react';
+import { Upload, Plus, Search, Package, Trash2, Check, ListTree } from 'lucide-react';
 import type { Business, Product, ProductVariant } from '@/services/db';
 import { productsApi } from '@/services/db';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { cn, formatCurrency } from '@/lib/utils';
+import CostBreakdownDialog from './CostBreakdownDialog';
 
 export default function ProductsTab({ business }: { business: Business }) {
   const cur = business.currency ?? 'USD';
@@ -24,6 +25,7 @@ export default function ProductsTab({ business }: { business: Business }) {
   const [importing, setImporting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ title: '', sku: '', price: '', cost: '', stock: '' });
+  const [breakdownFor, setBreakdownFor] = useState<ProductVariant | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -165,6 +167,7 @@ export default function ProductsTab({ business }: { business: Business }) {
                   <th className="px-4 py-2.5 font-medium text-right">Margin</th>
                   <th className="px-4 py-2.5 font-medium text-right">Stock</th>
                   <th className="px-2 py-2.5" />
+                  <th className="px-2 py-2.5" />
                 </tr>
               </thead>
               <tbody>
@@ -177,6 +180,7 @@ export default function ProductsTab({ business }: { business: Business }) {
                     <td className="px-2 py-2 text-right">{cell(v, 'cost', Number(v.cost_per_item) || 0)}</td>
                     <td className={`px-4 py-2 text-right tabular-nums ${margin(v) < 0 ? 'text-destructive' : margin(v) >= 50 ? 'text-success' : ''}`}>{margin(v).toFixed(0)}%</td>
                     <td className="px-2 py-2 text-right">{cell(v, 'stock', Number(v.inventory_qty) || 0)}</td>
+                    <td className="px-2 py-2 text-right"><button onClick={() => setBreakdownFor(v)} title="Cost breakdown" className="text-muted-foreground hover:text-foreground"><ListTree className="h-3.5 w-3.5" /></button></td>
                     <td className="px-2 py-2 text-right"><button onClick={async () => { if (confirm('Delete this variant?')) { await productsApi.removeVariant(v.id); load(); } }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button></td>
                   </tr>
                 ))}
@@ -206,6 +210,17 @@ export default function ProductsTab({ business }: { business: Business }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CostBreakdownDialog
+        business={business}
+        variant={breakdownFor}
+        label={breakdownFor ? `${productTitle.get(breakdownFor.product_id) || ''}${breakdownFor.title && breakdownFor.title !== 'Default' ? ' · ' + breakdownFor.title : ''}` : ''}
+        open={breakdownFor !== null}
+        onOpenChange={(v) => !v && setBreakdownFor(null)}
+        onApplied={(newCost) => {
+          if (breakdownFor) setVariants((prev) => prev.map((x) => (x.id === breakdownFor.id ? { ...x, cost_per_item: newCost } : x)));
+        }}
+      />
     </div>
   );
 }
