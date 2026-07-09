@@ -617,6 +617,55 @@ export const productCostItemsApi = {
   },
 };
 
+// ---------- Cost rules (Phase 2 cost engine) ----------
+export type { CostCategory, AllocationBasis, CostRule } from '@/finance/cost-rules';
+import type { CostRule } from '@/finance/cost-rules';
+
+export interface CostRuleRow extends CostRule {
+  business_id: string;
+}
+
+export const costRulesApi = {
+  async list(businessId: string): Promise<CostRuleRow[]> {
+    return unwrap(await supabase.from('cost_rules').select('*').eq('business_id', businessId).order('category').order('name')) || [];
+  },
+  async create(businessId: string, rule: Omit<CostRule, 'id'>): Promise<CostRuleRow> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('cost_rules').insert({ ...rule, business_id: businessId, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<CostRule>): Promise<CostRuleRow> {
+    return unwrap(await supabase.from('cost_rules').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).select().single());
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('cost_rules').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export interface CostBudgetRow {
+  id: string;
+  business_id: string;
+  category: string;
+  month: string; // 'YYYY-MM'
+  budget_amount: number;
+}
+
+export const costBudgetsApi = {
+  async list(businessId: string, month?: string): Promise<CostBudgetRow[]> {
+    let q = supabase.from('cost_budgets').select('*').eq('business_id', businessId);
+    if (month) q = q.eq('month', month);
+    return unwrap(await q) || [];
+  },
+  async save(businessId: string, category: string, month: string, budget_amount: number): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('cost_budgets').upsert(
+      { user_id, business_id: businessId, category, month, budget_amount },
+      { onConflict: 'business_id,category,month' },
+    );
+    if (error) throw error;
+  },
+};
+
 // ---------- Shipping zones ----------
 export interface ShippingZone {
   id: string;

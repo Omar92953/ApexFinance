@@ -15,6 +15,7 @@ import DealsTab from '@/components/crm/DealsTab';
 import TasksTab from '@/components/crm/TasksTab';
 import ProductsTab from '@/components/inventory/ProductsTab';
 import ManufacturingTab from '@/components/inventory/ManufacturingTab';
+import UnitEconomicsTab from '@/components/inventory/UnitEconomicsTab';
 import CapitalTab from '@/components/finance/CapitalTab';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +39,7 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
   ],
   inventory: [
     { key: 'products', label: 'Products' },
+    { key: 'unit-economics', label: 'Unit Economics' },
     { key: 'manufacturing', label: 'Manufacturing' },
   ],
   crm: [
@@ -153,11 +155,12 @@ export default function BusinessDetailPage() {
 
       {section === 'finance' && activeSubTab === 'capital' && <CapitalTab business={business} profit={profit} />}
       {section === 'finance' && activeSubTab === 'data' && <DataEntryTab business={business} start={start} end={end} onChanged={refresh} />}
-      {section === 'finance' && activeSubTab === 'costs' && <CostsTab business={business} onChanged={refresh} />}
+      {section === 'finance' && activeSubTab === 'costs' && <CostsTab business={business} start={start} end={end} onChanged={refresh} />}
       {section === 'finance' && activeSubTab === 'balance' && <BalanceTab business={business} onChanged={refresh} />}
       {section === 'finance' && activeSubTab === 'statements' && <StatementsTab profit={profit} business={business} start={start} end={end} />}
 
       {section === 'inventory' && activeSubTab === 'products' && <ProductsTab business={business} />}
+      {section === 'inventory' && activeSubTab === 'unit-economics' && <UnitEconomicsTab business={business} start={start} end={end} />}
       {section === 'inventory' && activeSubTab === 'manufacturing' && <ManufacturingTab business={business} />}
 
       {section === 'crm' && activeSubTab === 'customers' && <CustomersTab business={business} />}

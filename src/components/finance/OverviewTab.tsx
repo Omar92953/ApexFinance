@@ -36,9 +36,11 @@ export default function OverviewTab({ profit, business }: { profit: ProfitCalcul
           <Row label="− COGS (products)" value={formatCurrency(profit.cogsTotal, cur)} muted />
           <Row label="− Shipping" value={formatCurrency(profit.shippingCost, cur)} muted />
           <Row label="− Ad spend" value={formatCurrency(profit.totalAdSpend, cur)} muted />
-          <Row label="− Per-order costs" value={formatCurrency(profit.perOrderCosts, cur)} muted />
-          <Row label="− Per-product costs" value={formatCurrency(profit.perProductCosts, cur)} muted />
-          <Row label="− Fixed costs" value={formatCurrency(profit.fixedCosts, cur)} muted />
+          <Row label="− COGS (rules)" value={formatCurrency(profit.costRulesByCategory.cogs, cur)} muted />
+          <Row label="− Fulfillment" value={formatCurrency(profit.costRulesByCategory.fulfillment, cur)} muted />
+          <Row label="− Marketing (other)" value={formatCurrency(profit.costRulesByCategory.marketing, cur)} muted />
+          <Row label="− Overhead" value={formatCurrency(profit.costRulesByCategory.overhead, cur)} muted />
+          <Row label="− Fees" value={formatCurrency(profit.costRulesByCategory.fees, cur)} muted />
           <div className="border-t border-border my-2" />
           <Row label="Net profit" value={formatCurrency(profit.netProfit, cur)} bold tone={profit.netProfit >= 0 ? 'positive' : 'negative'} />
         </div>

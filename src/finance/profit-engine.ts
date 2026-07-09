@@ -1,3 +1,5 @@
+import type { CostCategory } from './cost-rules';
+
 export type ProfitModel =
   | 'percentage_of_sales'
   | 'percentage_of_profit'
@@ -42,6 +44,8 @@ export interface ProfitCalculation {
   fixedCosts: number;
   cogsTotal: number;         // per-product COGS from the product catalog
   shippingCost: number;      // zone-based shipping
+  costRulesTotal: number;    // total from the Cost Rules Engine (Phase 2)
+  costRulesByCategory: Record<CostCategory, number>;
   netProfit: number;
   profitMargin: number;
   userProfit: number;
@@ -59,7 +63,8 @@ export class ProfitEngine {
     metrics: Record<string, number>,
     config: ProfitConfig,
     additionalCosts: AdditionalCost[] = [],
-    landed: { cogsTotal?: number; shippingCost?: number } = {}
+    landed: { cogsTotal?: number; shippingCost?: number } = {},
+    ruleCosts: { total?: number; byCategory?: Record<CostCategory, number> } = {}
   ): ProfitCalculation {
     const grossSales = metrics['gross_sales'] || 0;
     const netSales = metrics['net_sales'] || 0;
@@ -99,8 +104,13 @@ export class ProfitEngine {
     const cogsTotal = landed.cogsTotal ?? 0;
     const shippingCost = landed.shippingCost ?? 0;
 
-    // Net Profit = Net Sales - Ad Spend - Additional Costs - COGS - Shipping
-    const netProfit = netSales - totalAdSpend - totalAdditionalCosts - cogsTotal - shippingCost;
+    // Cost Rules Engine total (Phase 2) — category-based rules replace the flat
+    // per-order/per-product/fixed model above (additionalCosts stays for back-compat).
+    const costRulesTotal = ruleCosts.total ?? 0;
+    const costRulesByCategory = ruleCosts.byCategory ?? { cogs: 0, fulfillment: 0, marketing: 0, overhead: 0, fees: 0 };
+
+    // Net Profit = Net Sales - Ad Spend - Additional Costs - COGS - Shipping - Cost Rules
+    const netProfit = netSales - totalAdSpend - totalAdditionalCosts - cogsTotal - shippingCost - costRulesTotal;
 
     // Profit Margin
     const profitMargin = netSales > 0 ? (netProfit / netSales) * 100 : 0;
@@ -138,8 +148,10 @@ export class ProfitEngine {
     const userProfitMargin = netProfit !== 0 ? (userProfit / netProfit) * 100 : 0;
 
     // Breakeven ROAS = 1 / (1 - costRatio)
+    // costRulesTotal is the Phase-2 successor of additionalCosts, so it's
+    // folded in the same way — both represent "other costs to recover via ROAS".
     const costRatio = netSales > 0
-      ? (totalAdSpend + totalAdditionalCosts) / netSales
+      ? (totalAdSpend + totalAdditionalCosts + costRulesTotal) / netSales
       : 0;
     const autoBreakevenRoas = costRatio > 0 && costRatio < 1
       ? 1 / (1 - costRatio)
@@ -172,6 +184,8 @@ export class ProfitEngine {
       fixedCosts,
       cogsTotal,
       shippingCost,
+      costRulesTotal,
+      costRulesByCategory,
       netProfit,
       profitMargin,
       userProfit,
@@ -205,6 +219,8 @@ export class ProfitEngine {
       fixedCosts: 0,
       cogsTotal: 0,
       shippingCost: 0,
+      costRulesTotal: 0,
+      costRulesByCategory: { cogs: 0, fulfillment: 0, marketing: 0, overhead: 0, fees: 0 },
       netProfit: 0,
       profitMargin: 0,
       userProfit: 0,
@@ -235,6 +251,10 @@ export class ProfitEngine {
       totals.fixedCosts += calculation.fixedCosts;
       totals.cogsTotal += calculation.cogsTotal ?? 0;
       totals.shippingCost += calculation.shippingCost ?? 0;
+      totals.costRulesTotal += calculation.costRulesTotal ?? 0;
+      for (const cat of Object.keys(totals.costRulesByCategory) as (keyof typeof totals.costRulesByCategory)[]) {
+        totals.costRulesByCategory[cat] += calculation.costRulesByCategory?.[cat] ?? 0;
+      }
       totals.netProfit += calculation.netProfit;
       totals.userProfit += calculation.userProfit;
       totals.orders += calculation.orders ?? 0;
@@ -253,7 +273,7 @@ export class ProfitEngine {
     totals.userProfitMargin = totals.netProfit !== 0 ? (totals.userProfit / totals.netProfit) * 100 : 0;
     totals.roas = totals.totalAdSpend > 0 ? totals.netSales / totals.totalAdSpend : 0;
     const costRatio = totals.netSales > 0
-      ? (totals.totalAdSpend + totals.additionalCosts) / totals.netSales
+      ? (totals.totalAdSpend + totals.additionalCosts + totals.costRulesTotal) / totals.netSales
       : 0;
     totals.autoBreakevenRoas = costRatio > 0 && costRatio < 1 ? 1 / (1 - costRatio) : 1.5;
     totals.breakevenRoas = totals.autoBreakevenRoas;
