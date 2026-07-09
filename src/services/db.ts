@@ -245,9 +245,9 @@ export const credentialsApi = {
     const { error } = await supabase.from('api_credentials').delete().eq('business_id', businessId).eq('platform', platform);
     if (error) throw error;
   },
-  // Trigger a sync via the Edge Function; returns the function's JSON result.
-  async sync(businessId: string, platform: 'shopify' | 'meta', days = 30): Promise<any> {
-    const fn = platform === 'shopify' ? 'sync-shopify' : 'sync-meta';
+  // Trigger a sync via the named Edge Function; returns the function's JSON result.
+  // fn: 'sync-shopify' (orders) | 'sync-shopify-products' | 'sync-shopify-customers' | 'sync-meta'
+  async sync(businessId: string, fn: string, days = 30): Promise<any> {
     const { data, error } = await supabase.functions.invoke(fn, { body: { business_id: businessId, days } });
     if (error) throw error;
     return data;

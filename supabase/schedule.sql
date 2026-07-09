@@ -36,6 +36,30 @@ select cron.schedule('apex-sync-meta', '*/15 * * * *', $$
   );
 $$);
 
+-- Products change far less often than orders — once a day is plenty.
+select cron.schedule('apex-sync-shopify-products', '0 3 * * *', $$
+  select net.http_post(
+    url := 'https://gyqqrbchpepvchjgweep.supabase.co/functions/v1/sync-shopify-products',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'apex_service_role_key')
+    ),
+    body := '{}'::jsonb
+  );
+$$);
+
+-- Customer list — also daily.
+select cron.schedule('apex-sync-shopify-customers', '15 3 * * *', $$
+  select net.http_post(
+    url := 'https://gyqqrbchpepvchjgweep.supabase.co/functions/v1/sync-shopify-customers',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'apex_service_role_key')
+    ),
+    body := '{}'::jsonb
+  );
+$$);
+
 -- Useful management queries:
 --   select * from cron.job;                       -- list scheduled jobs
 --   select * from cron.job_run_details order by start_time desc limit 20;  -- run history
