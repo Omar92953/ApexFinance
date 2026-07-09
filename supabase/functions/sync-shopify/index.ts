@@ -197,17 +197,16 @@ Deno.serve(async (req) => {
       return json({ success: true, mode: 'cron', synced: results.length, results });
     }
 
-    // User mode: verify caller owns the business.
-    const { data: userData } = await svc.auth.getUser(token);
-    const user = userData.user;
-    if (!user) return json({ error: 'unauthorized' }, 401);
+    // User mode: the app runs with login disabled (no real Supabase Auth session),
+    // so identify the caller by the business's own stored credential row instead
+    // of a JWT-bound user — consistent with the app's no-login/open_access model.
     if (!body.business_id) return json({ error: 'business_id required' }, 400);
 
     const { data: cred } = await svc.from('api_credentials')
-      .select('credentials').eq('business_id', body.business_id).eq('platform', 'shopify').eq('user_id', user.id).maybeSingle();
+      .select('user_id, credentials').eq('business_id', body.business_id).eq('platform', 'shopify').maybeSingle();
     if (!cred) return json({ error: 'Shopify not connected for this business' }, 404);
 
-    const result = await syncBusiness(svc, user.id, body.business_id, cred.credentials, days);
+    const result = await syncBusiness(svc, cred.user_id, body.business_id, cred.credentials, days);
     return json({ success: true, ...result });
   } catch (e) {
     return json({ error: String(e instanceof Error ? e.message : e) }, 500);
