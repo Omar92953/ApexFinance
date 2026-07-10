@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Plus, Sparkles, BookOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Sparkles, BookOpen, Download } from 'lucide-react';
 import type { Business, ChartAccount, JournalEntryRow, JournalLineRow } from '@/services/db';
 import { glApi } from '@/services/db';
 import { computeIncomeStatementFromTrialBalance, computeBalanceSheetFromTrialBalance, type TrialBalance } from '@/finance/ledger';
 import { Button } from '@/components/ui/button';
 import { cn, formatCurrency } from '@/lib/utils';
+import { exportToCsv } from '@/lib/csv';
 import JournalEntryDialog from './JournalEntryDialog';
 
 const SUBTYPE_LABEL: Record<string, string> = {
@@ -142,7 +143,12 @@ export default function GeneralLedgerTab({ business, start, end }: { business: B
 
       {/* Journal */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="border-b border-border px-5 py-3 text-sm font-semibold">Journal — {start} to {end}</div>
+        <div className="border-b border-border px-5 py-3 text-sm font-semibold flex items-center justify-between">
+          Journal — {start} to {end}
+          <Button variant="outline" size="sm" onClick={() => exportToCsv(`${business.name}-journal-${start}-to-${end}`, entries.flatMap((e) => e.lines.map((l) => ({
+            date: e.date, memo: e.memo ?? '', source_type: e.source_type ?? '', account_code: l.account?.code ?? '', account_name: l.account?.name ?? '', debit: l.debit, credit: l.credit,
+          }))))} disabled={entries.length === 0}><Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV</Button>
+        </div>
         {entries.length === 0 ? (
           <p className="px-5 py-4 text-sm text-muted-foreground">No entries in this period.</p>
         ) : (

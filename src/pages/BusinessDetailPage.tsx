@@ -30,6 +30,7 @@ import ReturnsTab from '@/components/sales/ReturnsTab';
 import CodReconciliationTab from '@/components/sales/CodReconciliationTab';
 import TicketsTab from '@/components/crm/TicketsTab';
 import CrmDashboardTab from '@/components/crm/CrmDashboardTab';
+import AuditLogTab from '@/components/finance/AuditLogTab';
 import EmployeesTab from '@/components/hr/EmployeesTab';
 import PayrollTab from '@/components/hr/PayrollTab';
 import LeaveTab from '@/components/hr/LeaveTab';
@@ -87,6 +88,7 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
   ],
   setup: [
     { key: 'integrations', label: 'Integrations' },
+    { key: 'audit-log', label: 'Audit Log' },
   ],
 };
 
@@ -226,6 +228,7 @@ export default function BusinessDetailPage() {
       {section === 'hr' && activeSubTab === 'leave' && <LeaveTab business={business} />}
 
       {section === 'setup' && activeSubTab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
+      {section === 'setup' && activeSubTab === 'audit-log' && <AuditLogTab business={business} />}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, Download } from 'lucide-react';
 import type { Business, CustomerInvoice, CapitalAccount } from '@/services/db';
 import { customerInvoicesApi, capitalApi } from '@/services/db';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { cn, formatCurrency } from '@/lib/utils';
+import { exportToCsv } from '@/lib/csv';
 
 const BUCKETS = [
   { key: 'current', label: 'Not yet due', test: (d: number) => d < 0 },
@@ -69,7 +70,10 @@ export default function CustomerInvoicesTab({ business }: { business: Business }
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="border-b border-border px-5 py-3 text-sm font-semibold">Outstanding invoices</div>
+        <div className="border-b border-border px-5 py-3 text-sm font-semibold flex items-center justify-between">
+          Outstanding invoices
+          <Button variant="outline" size="sm" onClick={() => exportToCsv(`${business.name}-receivables`, outstanding.map((i) => ({ invoice_number: i.invoice_number ?? '', payment_method: i.payment_method, due_date: i.due_date ?? '', status: i.status, amount: i.amount, amount_paid: i.amount_paid, balance: Number(i.amount) - Number(i.amount_paid) })))} disabled={outstanding.length === 0}><Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV</Button>
+        </div>
         {outstanding.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-muted-foreground"><FileText className="h-8 w-8 mx-auto mb-2 opacity-50" /> No outstanding invoices.</div>
         ) : (

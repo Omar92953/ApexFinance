@@ -78,6 +78,22 @@ function unwrap<T>(res: { data: T | null; error: any }): T {
   return res.data as T;
 }
 
+// ---------- Audit trail (Phase 10) ----------
+// Append-only log of significant, hard-to-reverse actions (money moved,
+// stock adjusted, records merged) — not every trivial CRUD edit. Logging
+// never blocks the underlying action if it fails.
+export const auditApi = {
+  async log(businessId: string, tableName: string, rowId: string | null, action: string, data?: unknown): Promise<void> {
+    try {
+      const user_id = await uid();
+      await supabase.from('audit_log').insert({ user_id, business_id: businessId, table_name: tableName, row_id: rowId, action, new_data: data ?? null });
+    } catch { /* audit logging is additive */ }
+  },
+  async list(businessId: string, limit = 200): Promise<Array<{ id: string; table_name: string; row_id: string | null; action: string; new_data: any; created_at: string }>> {
+    return unwrap(await supabase.from('audit_log').select('*').eq('business_id', businessId).order('created_at', { ascending: false }).limit(limit)) || [];
+  },
+};
+
 // ---------- Businesses ----------
 export const businessesApi = {
   async list(): Promise<Business[]> {
@@ -349,6 +365,8 @@ export const contactsApi = {
   async merge(primaryId: string, duplicateId: string): Promise<void> {
     const { error } = await supabase.rpc('merge_contacts', { p_primary_id: primaryId, p_duplicate_id: duplicateId });
     if (error) throw error;
+    const primary = unwrap(await supabase.from('contacts').select('business_id').eq('id', primaryId).single()) as { business_id: string } | null;
+    if (primary) auditApi.log(primary.business_id, 'contacts', primaryId, 'merge_contacts', { duplicateId });
   },
 };
 
@@ -1274,6 +1292,7 @@ export const purchaseOrdersApi = {
       p_lines: lines, p_bill_number: billNumber ?? null, p_due_date: dueDate ?? null,
     });
     if (error) throw error;
+    auditApi.log(businessId, 'goods_receipts', data as string, 'receive_purchase_order', { purchaseOrderId, lines });
     return data as string;
   },
 };
@@ -1291,6 +1310,7 @@ export const supplierBillsApi = {
       p_capital_account_id: capitalAccountId, p_amount: amount, p_date: date ?? new Date().toISOString().slice(0, 10),
     });
     if (error) throw error;
+    auditApi.log(businessId, 'supplier_bills', billId, 'pay_supplier_bill', { capitalAccountId, amount });
   },
 };
 
@@ -1374,6 +1394,7 @@ export const salesOrdersApi = {
       p_invoice_number: invoiceNumber ?? null, p_due_date: dueDate ?? null,
     });
     if (error) throw error;
+    auditApi.log(businessId, 'customer_invoices', data as string, 'create_customer_invoice', { salesOrderId });
     return data as string;
   },
 };
@@ -1390,6 +1411,7 @@ export const customerInvoicesApi = {
       p_capital_account_id: capitalAccountId, p_amount: amount, p_date: date ?? new Date().toISOString().slice(0, 10),
     });
     if (error) throw error;
+    auditApi.log(businessId, 'customer_invoices', invoiceId, 'pay_customer_invoice', { capitalAccountId, amount });
   },
 };
 
@@ -1422,6 +1444,7 @@ export const salesReturnsApi = {
       p_capital_account_id: input.capital_account_id ?? null, p_reason: input.reason ?? null,
     });
     if (error) throw error;
+    auditApi.log(businessId, 'sales_returns', input.customer_invoice_id ?? null, 'process_sales_return', input);
   },
 };
 
@@ -1437,6 +1460,7 @@ export const codApi = {
       p_capital_account_id: capitalAccountId, p_invoice_ids: invoiceIds,
     });
     if (error) throw error;
+    auditApi.log(businessId, 'cod_remittances', null, 'record_cod_remittance', { courier, grossAmount, courierFee, invoiceIds });
   },
 };
 
@@ -1517,6 +1541,7 @@ export const bomApi = {
       p_extra_costs: extraCosts.filter((c) => c.name || c.value), p_account_id: accountId, p_date: date ?? new Date().toISOString().slice(0, 10),
     });
     if (error) throw error;
+    auditApi.log(businessId, 'manufacturing_batches', data as string, 'record_bom_batch', { bomId, quantity });
     return data as string;
   },
 };
@@ -1621,6 +1646,7 @@ export const payrollApi = {
       p_account_id: accountId, p_date: date ?? new Date().toISOString().slice(0, 10),
     });
     if (error) throw error;
+    auditApi.log(businessId, 'payroll_runs', payrollRunId, 'process_payroll_run', { accountId });
   },
 };
 

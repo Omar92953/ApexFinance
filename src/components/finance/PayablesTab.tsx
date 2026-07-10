@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CreditCard } from 'lucide-react';
+import { CreditCard, Download } from 'lucide-react';
 import type { Business, SupplierBill, CapitalAccount } from '@/services/db';
 import { supplierBillsApi, capitalApi } from '@/services/db';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { cn, formatCurrency } from '@/lib/utils';
+import { exportToCsv } from '@/lib/csv';
 
 const BUCKETS = [
   { key: 'current', label: 'Not yet due', test: (d: number) => d < 0 },
@@ -79,7 +80,10 @@ export default function PayablesTab({ business }: { business: Business }) {
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="border-b border-border px-5 py-3 text-sm font-semibold">Outstanding bills</div>
+        <div className="border-b border-border px-5 py-3 text-sm font-semibold flex items-center justify-between">
+          Outstanding bills
+          <Button variant="outline" size="sm" onClick={() => exportToCsv(`${business.name}-payables`, outstanding.map((b) => ({ bill_number: b.bill_number ?? '', due_date: b.due_date ?? '', status: b.status, amount: b.amount, amount_paid: b.amount_paid, balance: Number(b.amount) - Number(b.amount_paid) })))} disabled={outstanding.length === 0}><Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV</Button>
+        </div>
         {outstanding.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-muted-foreground">
             <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" /> No outstanding bills.

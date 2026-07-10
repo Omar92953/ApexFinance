@@ -2,6 +2,8 @@ import { TrendingUp, DollarSign, Target, Users, ShoppingCart, Gauge } from 'luci
 import type { ProfitCalculation } from '@/finance/profit-engine';
 import type { Business } from '@/services/db';
 import KpiCard from '@/components/shared/KpiCard';
+import AlertCenter from '@/components/shared/AlertCenter';
+import CommandCenterStrip from '@/components/shared/CommandCenterStrip';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 
 export default function OverviewTab({ profit, business }: { profit: ProfitCalculation | null; business: Business }) {
@@ -15,6 +17,9 @@ export default function OverviewTab({ profit, business }: { profit: ProfitCalcul
 
   return (
     <div className="space-y-4">
+      <AlertCenter business={business} />
+      <CommandCenterStrip business={business} />
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Net Profit" value={formatCurrency(profit.netProfit, cur)} sub={`${profit.profitMargin.toFixed(1)}% margin`} tone={profit.netProfit >= 0 ? 'positive' : 'negative'} icon={<TrendingUp className="h-4 w-4" />} delay={0} />
         <KpiCard label="Net Revenue" value={formatCurrency(profit.netSales, cur)} sub={`Gross ${formatCurrency(profit.grossSales, cur)}`} icon={<DollarSign className="h-4 w-4" />} delay={40} />
