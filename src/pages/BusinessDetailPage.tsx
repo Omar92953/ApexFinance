@@ -23,12 +23,17 @@ import CapitalTab from '@/components/finance/CapitalTab';
 import GeneralLedgerTab from '@/components/finance/GeneralLedgerTab';
 import GoalsTab from '@/components/finance/GoalsTab';
 import ProfitabilityTab from '@/components/finance/ProfitabilityTab';
+import SalesOrdersTab from '@/components/sales/SalesOrdersTab';
+import CustomerInvoicesTab from '@/components/sales/CustomerInvoicesTab';
+import ReturnsTab from '@/components/sales/ReturnsTab';
+import CodReconciliationTab from '@/components/sales/CodReconciliationTab';
 import { cn } from '@/lib/utils';
 
 const SECTIONS = [
   { key: 'overview', label: 'Overview' },
   { key: 'finance', label: 'Finance' },
   { key: 'inventory', label: 'Inventory' },
+  { key: 'sales', label: 'Sales' },
   { key: 'crm', label: 'CRM' },
   { key: 'setup', label: 'Setup' },
 ] as const;
@@ -54,6 +59,12 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
     { key: 'suppliers', label: 'Suppliers' },
     { key: 'purchase-orders', label: 'Purchase Orders' },
   ],
+  sales: [
+    { key: 'orders', label: 'Orders' },
+    { key: 'invoices', label: 'Invoices' },
+    { key: 'returns', label: 'Returns' },
+    { key: 'cod', label: 'COD' },
+  ],
   crm: [
     { key: 'customers', label: 'Customers' },
     { key: 'deals', label: 'Deals' },
@@ -67,6 +78,7 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
 const DEFAULT_SUB_TAB: Record<Exclude<SectionKey, 'overview'>, string> = {
   finance: 'capital',
   inventory: 'products',
+  sales: 'orders',
   crm: 'customers',
   setup: 'integrations',
 };
@@ -180,6 +192,11 @@ export default function BusinessDetailPage() {
       {section === 'inventory' && activeSubTab === 'manufacturing' && <ManufacturingTab business={business} />}
       {section === 'inventory' && activeSubTab === 'suppliers' && <SuppliersTab business={business} />}
       {section === 'inventory' && activeSubTab === 'purchase-orders' && <PurchaseOrdersTab business={business} />}
+
+      {section === 'sales' && activeSubTab === 'orders' && <SalesOrdersTab business={business} />}
+      {section === 'sales' && activeSubTab === 'invoices' && <CustomerInvoicesTab business={business} />}
+      {section === 'sales' && activeSubTab === 'returns' && <ReturnsTab business={business} />}
+      {section === 'sales' && activeSubTab === 'cod' && <CodReconciliationTab business={business} />}
 
       {section === 'crm' && activeSubTab === 'customers' && <CustomersTab business={business} />}
       {section === 'crm' && activeSubTab === 'deals' && <DealsTab business={business} />}

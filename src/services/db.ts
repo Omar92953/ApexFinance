@@ -1232,6 +1232,152 @@ export const supplierBillsApi = {
   },
 };
 
+// ---------- Sales, AR, Returns & COD (Phase 7) ----------
+export interface SalesOrder {
+  id: string;
+  business_id: string;
+  contact_id?: string | null;
+  order_number?: string | null;
+  status: string;
+  payment_method: 'prepaid' | 'cod';
+  courier?: string | null;
+  is_rto?: boolean;
+  order_date: string;
+  notes?: string | null;
+}
+
+export interface SalesOrderLine {
+  id: string;
+  sales_order_id: string;
+  variant_id?: string | null;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+}
+
+export interface CustomerInvoice {
+  id: string;
+  business_id: string;
+  sales_order_id?: string | null;
+  contact_id?: string | null;
+  invoice_number?: string | null;
+  amount: number;
+  amount_paid: number;
+  payment_method: 'prepaid' | 'cod';
+  status: string;
+  invoice_date: string;
+  due_date?: string | null;
+}
+
+export interface CodRemittanceRow {
+  id: string;
+  business_id: string;
+  courier?: string | null;
+  gross_amount: number;
+  courier_fee: number;
+  net_amount: number;
+  date: string;
+}
+
+export const salesOrdersApi = {
+  async list(businessId: string): Promise<SalesOrder[]> {
+    return unwrap(await supabase.from('sales_orders').select('*').eq('business_id', businessId).order('order_date', { ascending: false })) || [];
+  },
+  async listLines(salesOrderId: string): Promise<SalesOrderLine[]> {
+    return unwrap(await supabase.from('sales_order_lines').select('*').eq('sales_order_id', salesOrderId)) || [];
+  },
+  async create(businessId: string, order: { contact_id?: string | null; order_number?: string; payment_method: 'prepaid' | 'cod'; courier?: string; notes?: string },
+    lines: Array<{ variant_id?: string | null; description?: string; quantity: number; unit_price: number }>): Promise<SalesOrder> {
+    const user_id = await uid();
+    const created: SalesOrder = unwrap(await supabase.from('sales_orders').insert({ ...order, business_id: businessId, user_id, status: 'draft' }).select().single());
+    if (lines.length) {
+      const { error } = await supabase.from('sales_order_lines').insert(lines.map((l) => ({ ...l, business_id: businessId, user_id, sales_order_id: created.id })));
+      if (error) throw error;
+    }
+    return created;
+  },
+  async markRto(id: string, isRto: boolean): Promise<void> {
+    const { error } = await supabase.from('sales_orders').update({ is_rto: isRto, status: isRto ? 'cancelled' : undefined, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async updateStatus(id: string, status: string): Promise<void> {
+    const { error } = await supabase.from('sales_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  // Atomic: creates the invoice from this order's lines, deducts stock, posts revenue + COGS.
+  async invoice(businessId: string, salesOrderId: string, invoiceNumber?: string, dueDate?: string): Promise<string> {
+    const user_id = await uid();
+    const { data, error } = await supabase.rpc('create_customer_invoice', {
+      p_business_id: businessId, p_user_id: user_id, p_sales_order_id: salesOrderId,
+      p_invoice_number: invoiceNumber ?? null, p_due_date: dueDate ?? null,
+    });
+    if (error) throw error;
+    return data as string;
+  },
+};
+
+export const customerInvoicesApi = {
+  async list(businessId: string): Promise<CustomerInvoice[]> {
+    return unwrap(await supabase.from('customer_invoices').select('*').eq('business_id', businessId).order('due_date', { ascending: true, nullsFirst: false })) || [];
+  },
+  // Atomic: Dr Cash / Cr AR — for prepaid invoices only (COD settles via cod remittance).
+  async pay(businessId: string, invoiceId: string, capitalAccountId: string, amount: number, date?: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.rpc('pay_customer_invoice', {
+      p_business_id: businessId, p_user_id: user_id, p_invoice_id: invoiceId,
+      p_capital_account_id: capitalAccountId, p_amount: amount, p_date: date ?? new Date().toISOString().slice(0, 10),
+    });
+    if (error) throw error;
+  },
+};
+
+export interface SalesReturnRow {
+  id: string;
+  business_id: string;
+  customer_invoice_id?: string | null;
+  variant_id?: string | null;
+  quantity: number;
+  refund_amount: number;
+  refund_via_cash: boolean;
+  reason?: string | null;
+  date: string;
+}
+
+export const salesReturnsApi = {
+  async list(businessId: string): Promise<SalesReturnRow[]> {
+    return unwrap(await supabase.from('sales_returns').select('*').eq('business_id', businessId).order('date', { ascending: false })) || [];
+  },
+  // Atomic: restocks the unit and reverses revenue (cash refund or AR credit note).
+  async process(businessId: string, input: {
+    customer_invoice_id?: string | null; variant_id?: string | null; quantity: number; refund_amount: number;
+    refund_via_cash: boolean; capital_account_id?: string | null; reason?: string;
+  }): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.rpc('process_sales_return', {
+      p_business_id: businessId, p_user_id: user_id,
+      p_customer_invoice_id: input.customer_invoice_id ?? null, p_variant_id: input.variant_id ?? null,
+      p_quantity: input.quantity, p_refund_amount: input.refund_amount, p_refund_via_cash: input.refund_via_cash,
+      p_capital_account_id: input.capital_account_id ?? null, p_reason: input.reason ?? null,
+    });
+    if (error) throw error;
+  },
+};
+
+export const codApi = {
+  async listRemittances(businessId: string): Promise<CodRemittanceRow[]> {
+    return unwrap(await supabase.from('cod_remittances').select('*').eq('business_id', businessId).order('date', { ascending: false })) || [];
+  },
+  // Atomic: settles the listed COD invoices, credits net cash, debits courier fee expense.
+  async recordRemittance(businessId: string, courier: string, grossAmount: number, courierFee: number, capitalAccountId: string, invoiceIds: string[]): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.rpc('record_cod_remittance', {
+      p_business_id: businessId, p_user_id: user_id, p_courier: courier, p_gross: grossAmount, p_fee: courierFee,
+      p_capital_account_id: capitalAccountId, p_invoice_ids: invoiceIds,
+    });
+    if (error) throw error;
+  },
+};
+
 // ---------- Period closes (month-close snapshots, Phase 5) ----------
 export interface PeriodCloseRow {
   id: string;

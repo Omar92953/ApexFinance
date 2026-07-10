@@ -207,7 +207,7 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 | 3 | Full Shopify auto-sync — products+cost+stock, orders write line items + auto-decrement stock | ✅ Code done, functions deployed; **blocked on Omar creating a Shopify app** (not done yet) |
 | 4 | Double-entry General Ledger — chart of accounts, atomic RPC, Trial Balance, GL statements, auto-posting | ✅ Done — **`gl_schema.sql` needs Omar to run it** |
 | 5 | Finance 2.0 — budgeting, goals, 13-week cash-flow forecast, month-close, drawings tracking, profitability reports | ✅ Done — **`finance2_schema.sql` needs Omar to run it** |
-| 6 | Procurement & Purchasing — suppliers, POs, receiving, AP, reorder suggestions | Not started |
+| 6 | Procurement & Purchasing — suppliers, POs, receiving, AP, reorder suggestions | ✅ Done — **`purchasing_schema.sql` needs Omar to run it** |
 | 7 | Sales, AR, Returns & COD reconciliation | Not started |
 | 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | Not started |
 | 9 | Manufacturing BOM/MRP-lite + simple HR/Payroll | Not started |
@@ -422,3 +422,17 @@ transaction; auto-posting phantom GL entries for the same rules on a timer
 would double-count against real Capital-recorded payments and wasn't a good
 fit for this architecture. **`finance2_schema.sql` written and handed off —
 not yet confirmed run.**
+
+#### 17. Procurement & Purchasing (FEATURE / ERP-P6)
+`reorder.ts` pure engine (tested — 4 cases): target-stock/reorder-qty math.
+`purchasing_schema.sql`: suppliers, purchase_orders/lines, goods_receipts/lines,
+supplier_bills, bill_payments + two atomic RPCs — `receive_purchase_order`
+(updates PO lines, inventory movement + WAC, creates supplier bill, posts
+Dr Inventory/Cr AP, all in one transaction) and `pay_supplier_bill` (debits
+bill balance, credits capital account, posts Dr AP/Cr Cash). New tabs:
+Suppliers, Purchase Orders (with reorder suggestions sourced from
+stock-health.ts + one-click "Create PO from selected"), Payables (AP aging
+buckets + pay-bill dialog). **Note**: per Omar's request, from this phase
+onward all pending `.sql` files and Edge Function deploys are being batched
+for a single end-of-session handoff instead of one per phase — check the
+bottom of this file's status table for the current list of un-run migrations.
