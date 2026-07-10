@@ -275,6 +275,7 @@ export interface Contact {
   orders_count: number;
   accepts_marketing: boolean;
   last_order_date?: string | null;
+  follow_up_date?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -288,6 +289,7 @@ export interface DealRow {
   stage: string;
   notes?: string | null;
   expected_close?: string | null;
+  win_loss_reason?: string | null;
 }
 
 export interface TaskRow {
@@ -329,6 +331,24 @@ export const contactsApi = {
     const { data, error } = await supabase.functions.invoke('sync-shopify-customers', { body: { business_id: businessId } });
     if (error) throw error;
     return data;
+  },
+  // Finds likely duplicate contacts within a business (same email or same phone).
+  findDuplicates(contacts: Contact[]): Array<{ key: string; contacts: Contact[] }> {
+    const byEmail = new Map<string, Contact[]>();
+    const byPhone = new Map<string, Contact[]>();
+    for (const c of contacts) {
+      if (c.email) { const k = c.email.toLowerCase().trim(); (byEmail.get(k) ?? byEmail.set(k, []).get(k)!).push(c); }
+      if (c.phone) { const k = c.phone.replace(/\D/g, ''); if (k) (byPhone.get(k) ?? byPhone.set(k, []).get(k)!).push(c); }
+    }
+    const groups = new Map<string, Contact[]>();
+    for (const [k, list] of byEmail) if (list.length > 1) groups.set(`email:${k}`, list);
+    for (const [k, list] of byPhone) if (list.length > 1) groups.set(`phone:${k}`, list);
+    return Array.from(groups.entries()).map(([key, contacts]) => ({ key, contacts }));
+  },
+  // Atomic: re-points notes/activities/deals/tasks/tickets from duplicate -> primary, merges fields, deletes duplicate.
+  async merge(primaryId: string, duplicateId: string): Promise<void> {
+    const { error } = await supabase.rpc('merge_contacts', { p_primary_id: primaryId, p_duplicate_id: duplicateId });
+    if (error) throw error;
   },
 };
 
@@ -385,6 +405,48 @@ export const tasksApi = {
   async remove(id: string): Promise<void> {
     const { error } = await supabase.from('tasks').delete().eq('id', id);
     if (error) throw error;
+  },
+};
+
+// ---------- Support tickets ----------
+export interface TicketRow {
+  id: string;
+  business_id: string;
+  contact_id?: string | null;
+  subject: string;
+  status: string;
+  priority: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const ticketsApi = {
+  async list(businessId: string): Promise<TicketRow[]> {
+    return unwrap(await supabase.from('tickets').select('*').eq('business_id', businessId).order('updated_at', { ascending: false })) || [];
+  },
+  async create(t: { business_id: string; contact_id?: string | null; subject: string; priority?: string }): Promise<TicketRow> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('tickets').insert({ ...t, user_id, status: 'open' }).select().single());
+  },
+  async updateStatus(id: string, status: string): Promise<void> {
+    const { error } = await supabase.from('tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('tickets').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const ticketMessagesApi = {
+  async list(ticketId: string): Promise<Array<{ id: string; body: string; created_at: string }>> {
+    return unwrap(await supabase.from('ticket_messages').select('id, body, created_at').eq('ticket_id', ticketId).order('created_at')) || [];
+  },
+  async add(businessId: string, ticketId: string, body: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('ticket_messages').insert({ user_id, business_id: businessId, ticket_id: ticketId, body });
+    if (error) throw error;
+    await supabase.from('tickets').update({ updated_at: new Date().toISOString() }).eq('id', ticketId);
   },
 };
 

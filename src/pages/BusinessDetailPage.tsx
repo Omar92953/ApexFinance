@@ -27,6 +27,8 @@ import SalesOrdersTab from '@/components/sales/SalesOrdersTab';
 import CustomerInvoicesTab from '@/components/sales/CustomerInvoicesTab';
 import ReturnsTab from '@/components/sales/ReturnsTab';
 import CodReconciliationTab from '@/components/sales/CodReconciliationTab';
+import TicketsTab from '@/components/crm/TicketsTab';
+import CrmDashboardTab from '@/components/crm/CrmDashboardTab';
 import { cn } from '@/lib/utils';
 
 const SECTIONS = [
@@ -66,9 +68,11 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
     { key: 'cod', label: 'COD' },
   ],
   crm: [
+    { key: 'crm-dashboard', label: 'Dashboard' },
     { key: 'customers', label: 'Customers' },
     { key: 'deals', label: 'Deals' },
     { key: 'tasks', label: 'Tasks' },
+    { key: 'tickets', label: 'Tickets' },
   ],
   setup: [
     { key: 'integrations', label: 'Integrations' },
@@ -198,9 +202,11 @@ export default function BusinessDetailPage() {
       {section === 'sales' && activeSubTab === 'returns' && <ReturnsTab business={business} />}
       {section === 'sales' && activeSubTab === 'cod' && <CodReconciliationTab business={business} />}
 
+      {section === 'crm' && activeSubTab === 'crm-dashboard' && <CrmDashboardTab business={business} />}
       {section === 'crm' && activeSubTab === 'customers' && <CustomersTab business={business} />}
       {section === 'crm' && activeSubTab === 'deals' && <DealsTab business={business} />}
       {section === 'crm' && activeSubTab === 'tasks' && <TasksTab business={business} />}
+      {section === 'crm' && activeSubTab === 'tickets' && <TicketsTab business={business} />}
 
       {section === 'setup' && activeSubTab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
     </div>

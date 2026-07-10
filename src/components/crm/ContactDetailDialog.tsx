@@ -37,6 +37,7 @@ export default function ContactDetailDialog({
       await contactsApi.update(contact.id, {
         first_name: form.first_name, last_name: form.last_name, email: form.email, phone: form.phone,
         company: form.company, city: form.city, country: form.country, status: form.status,
+        follow_up_date: form.follow_up_date || null,
         tags: typeof form.tags === 'string' ? String(form.tags).split(',').map((t) => t.trim()).filter(Boolean) : form.tags,
       });
       onChanged();
@@ -82,6 +83,10 @@ export default function ContactDetailDialog({
               </select>
             </div>
             <Field label="Tags (comma-separated)" value={tagsValue} onChange={(v) => setForm({ ...form, tags: v as any })} icon={<Tag className="h-3.5 w-3.5" />} />
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />Next follow-up</Label>
+              <Input type="date" value={form.follow_up_date ?? ''} onChange={(e) => setForm({ ...form, follow_up_date: e.target.value || null })} />
+            </div>
 
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">Total spent</span><span className="tabular-nums font-medium">{formatCurrency(Number(contact.total_spent) || 0, cur)}</span></div>
