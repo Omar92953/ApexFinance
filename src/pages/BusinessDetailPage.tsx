@@ -18,6 +18,7 @@ import ManufacturingTab from '@/components/inventory/ManufacturingTab';
 import UnitEconomicsTab from '@/components/inventory/UnitEconomicsTab';
 import SuppliersTab from '@/components/inventory/SuppliersTab';
 import PurchaseOrdersTab from '@/components/inventory/PurchaseOrdersTab';
+import BomTab from '@/components/inventory/BomTab';
 import PayablesTab from '@/components/finance/PayablesTab';
 import CapitalTab from '@/components/finance/CapitalTab';
 import GeneralLedgerTab from '@/components/finance/GeneralLedgerTab';
@@ -29,6 +30,9 @@ import ReturnsTab from '@/components/sales/ReturnsTab';
 import CodReconciliationTab from '@/components/sales/CodReconciliationTab';
 import TicketsTab from '@/components/crm/TicketsTab';
 import CrmDashboardTab from '@/components/crm/CrmDashboardTab';
+import EmployeesTab from '@/components/hr/EmployeesTab';
+import PayrollTab from '@/components/hr/PayrollTab';
+import LeaveTab from '@/components/hr/LeaveTab';
 import { cn } from '@/lib/utils';
 
 const SECTIONS = [
@@ -37,6 +41,7 @@ const SECTIONS = [
   { key: 'inventory', label: 'Inventory' },
   { key: 'sales', label: 'Sales' },
   { key: 'crm', label: 'CRM' },
+  { key: 'hr', label: 'HR' },
   { key: 'setup', label: 'Setup' },
 ] as const;
 
@@ -60,6 +65,7 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
     { key: 'manufacturing', label: 'Manufacturing' },
     { key: 'suppliers', label: 'Suppliers' },
     { key: 'purchase-orders', label: 'Purchase Orders' },
+    { key: 'bom', label: 'Bill of Materials' },
   ],
   sales: [
     { key: 'orders', label: 'Orders' },
@@ -74,6 +80,11 @@ const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: st
     { key: 'tasks', label: 'Tasks' },
     { key: 'tickets', label: 'Tickets' },
   ],
+  hr: [
+    { key: 'employees', label: 'Employees' },
+    { key: 'payroll', label: 'Payroll' },
+    { key: 'leave', label: 'Leave' },
+  ],
   setup: [
     { key: 'integrations', label: 'Integrations' },
   ],
@@ -84,6 +95,7 @@ const DEFAULT_SUB_TAB: Record<Exclude<SectionKey, 'overview'>, string> = {
   inventory: 'products',
   sales: 'orders',
   crm: 'customers',
+  hr: 'employees',
   setup: 'integrations',
 };
 
@@ -196,6 +208,7 @@ export default function BusinessDetailPage() {
       {section === 'inventory' && activeSubTab === 'manufacturing' && <ManufacturingTab business={business} />}
       {section === 'inventory' && activeSubTab === 'suppliers' && <SuppliersTab business={business} />}
       {section === 'inventory' && activeSubTab === 'purchase-orders' && <PurchaseOrdersTab business={business} />}
+      {section === 'inventory' && activeSubTab === 'bom' && <BomTab business={business} />}
 
       {section === 'sales' && activeSubTab === 'orders' && <SalesOrdersTab business={business} />}
       {section === 'sales' && activeSubTab === 'invoices' && <CustomerInvoicesTab business={business} />}
@@ -207,6 +220,10 @@ export default function BusinessDetailPage() {
       {section === 'crm' && activeSubTab === 'deals' && <DealsTab business={business} />}
       {section === 'crm' && activeSubTab === 'tasks' && <TasksTab business={business} />}
       {section === 'crm' && activeSubTab === 'tickets' && <TicketsTab business={business} />}
+
+      {section === 'hr' && activeSubTab === 'employees' && <EmployeesTab business={business} />}
+      {section === 'hr' && activeSubTab === 'payroll' && <PayrollTab business={business} />}
+      {section === 'hr' && activeSubTab === 'leave' && <LeaveTab business={business} />}
 
       {section === 'setup' && activeSubTab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
     </div>

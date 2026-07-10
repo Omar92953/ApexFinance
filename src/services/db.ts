@@ -1469,6 +1469,180 @@ export const periodClosesApi = {
   },
 };
 
+// ---------- Manufacturing BOM/MRP-lite (Phase 9) ----------
+export interface BillOfMaterials {
+  id: string;
+  business_id: string;
+  finished_variant_id: string;
+  name?: string | null;
+  is_active: boolean;
+}
+
+export interface BomComponentRow {
+  id: string;
+  bom_id: string;
+  component_variant_id: string;
+  quantity_per_unit: number;
+}
+
+export const bomApi = {
+  async list(businessId: string): Promise<BillOfMaterials[]> {
+    return unwrap(await supabase.from('bill_of_materials').select('*').eq('business_id', businessId).order('created_at', { ascending: false })) || [];
+  },
+  async listComponents(bomId: string): Promise<BomComponentRow[]> {
+    return unwrap(await supabase.from('bom_components').select('*').eq('bom_id', bomId)) || [];
+  },
+  // Creates a BOM with its component lines in one go.
+  async create(businessId: string, finishedVariantId: string, name: string | undefined, components: Array<{ component_variant_id: string; quantity_per_unit: number }>): Promise<BillOfMaterials> {
+    const user_id = await uid();
+    const created: BillOfMaterials = unwrap(await supabase.from('bill_of_materials').insert({ business_id: businessId, user_id, finished_variant_id: finishedVariantId, name: name ?? null }).select().single());
+    if (components.length) {
+      const { error } = await supabase.from('bom_components').insert(components.map((c) => ({ ...c, bom_id: created.id })));
+      if (error) throw error;
+    }
+    return created;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('bill_of_materials').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Atomic: validates component stock, deducts each component, auto-fills the
+  // finished unit's cost from component WAC + any extra labor/overhead cost
+  // items, blends the finished variant's WAC, and (for extra costs only)
+  // debits the capital account + posts Dr Inventory/Cr [capital GL].
+  async recordBatch(businessId: string, bomId: string, quantity: number, extraCosts: Array<{ name: string; category: string; value: number }>, accountId: string | null, date?: string): Promise<string> {
+    const user_id = await uid();
+    const { data, error } = await supabase.rpc('record_bom_batch', {
+      p_business_id: businessId, p_user_id: user_id, p_bom_id: bomId, p_quantity: quantity,
+      p_extra_costs: extraCosts.filter((c) => c.name || c.value), p_account_id: accountId, p_date: date ?? new Date().toISOString().slice(0, 10),
+    });
+    if (error) throw error;
+    return data as string;
+  },
+};
+
+// ---------- Simple HR / Payroll (Phase 9) ----------
+export interface Employee {
+  id: string;
+  business_id: string;
+  name: string;
+  role?: string | null;
+  monthly_salary: number;
+  phone?: string | null;
+  email?: string | null;
+  hire_date?: string | null;
+  is_active: boolean;
+}
+
+export interface PayrollRun {
+  id: string;
+  business_id: string;
+  period_month: string;
+  status: 'draft' | 'paid';
+  total_amount: number;
+  paid_date?: string | null;
+}
+
+export interface PayrollRunLine {
+  id: string;
+  payroll_run_id: string;
+  employee_id?: string | null;
+  base_salary: number;
+  bonus: number;
+  deductions: number;
+  net_amount: number;
+}
+
+export interface LeaveRecord {
+  id: string;
+  business_id: string;
+  employee_id: string;
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  notes?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
+export const employeesApi = {
+  async list(businessId: string): Promise<Employee[]> {
+    return unwrap(await supabase.from('employees').select('*').eq('business_id', businessId).order('name')) || [];
+  },
+  async create(e: Partial<Employee> & { business_id: string; name: string }): Promise<Employee> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('employees').insert({ ...e, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<Employee>): Promise<void> {
+    const { error } = await supabase.from('employees').update(patch).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('employees').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const payrollApi = {
+  async listRuns(businessId: string): Promise<PayrollRun[]> {
+    return unwrap(await supabase.from('payroll_runs').select('*').eq('business_id', businessId).order('period_month', { ascending: false })) || [];
+  },
+  async listLines(payrollRunId: string): Promise<PayrollRunLine[]> {
+    return unwrap(await supabase.from('payroll_run_lines').select('*').eq('payroll_run_id', payrollRunId)) || [];
+  },
+  // Creates a draft run pre-filled with one line per active employee (base = their monthly salary).
+  async createRun(businessId: string, periodMonth: string, employees: Employee[]): Promise<PayrollRun> {
+    const user_id = await uid();
+    const created: PayrollRun = unwrap(await supabase.from('payroll_runs').insert({ business_id: businessId, user_id, period_month: periodMonth, status: 'draft' }).select().single());
+    const active = employees.filter((e) => e.is_active);
+    if (active.length) {
+      const { error } = await supabase.from('payroll_run_lines').insert(active.map((e) => ({
+        payroll_run_id: created.id, employee_id: e.id, base_salary: e.monthly_salary, bonus: 0, deductions: 0, net_amount: e.monthly_salary,
+      })));
+      if (error) throw error;
+    }
+    return created;
+  },
+  async updateLine(id: string, patch: { bonus?: number; deductions?: number }, base: number): Promise<void> {
+    const bonus = patch.bonus ?? 0;
+    const deductions = patch.deductions ?? 0;
+    const { error } = await supabase.from('payroll_run_lines').update({ ...patch, net_amount: base + bonus - deductions }).eq('id', id);
+    if (error) throw error;
+  },
+  async removeRun(id: string): Promise<void> {
+    const { error } = await supabase.from('payroll_runs').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Atomic: debits the capital account for the run's total and posts
+  // Dr Salaries & Wages/Cr [capital GL], marking the run paid.
+  async pay(businessId: string, payrollRunId: string, accountId: string, date?: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.rpc('process_payroll_run', {
+      p_business_id: businessId, p_user_id: user_id, p_payroll_run_id: payrollRunId,
+      p_account_id: accountId, p_date: date ?? new Date().toISOString().slice(0, 10),
+    });
+    if (error) throw error;
+  },
+};
+
+export const leaveApi = {
+  async list(businessId: string): Promise<LeaveRecord[]> {
+    return unwrap(await supabase.from('leave_records').select('*').eq('business_id', businessId).order('start_date', { ascending: false })) || [];
+  },
+  async create(l: Partial<LeaveRecord> & { business_id: string; employee_id: string; start_date: string; end_date: string }): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('leave_records').insert({ ...l, user_id });
+    if (error) throw error;
+  },
+  async updateStatus(id: string, status: LeaveRecord['status']): Promise<void> {
+    const { error } = await supabase.from('leave_records').update({ status }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('leave_records').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {
