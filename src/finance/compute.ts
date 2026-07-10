@@ -5,6 +5,40 @@ import { supabase } from '@/lib/supabase';
 import { computeLtvPredictions, type OrderRow } from './ltv-engine';
 import { computeCostRules, dateOverlapDays, type CostRuleBreakdown, type CostRuleContext, type CostCategory } from './cost-rules';
 import { computeCashFlowForecast, type ForecastWeek } from './forecast';
+import { computeAvgDailyUnits, classifyStockHealth } from './stock-health';
+import { computeReorderQty } from './reorder';
+
+const REORDER_WINDOW_DAYS = 30;
+const REORDER_TARGET_COVER_DAYS = 30;
+
+// Variants currently "Below Safe Level" or "Out of Stock" with real sales
+// history, and how much to order to reach a healthy cover — feeds the
+// Purchase Orders tab's reorder suggestions.
+export interface ReorderSuggestionRow { variantId: string; productId: string; title: string; sku: string | null; stockQty: number; avgDailyUnits: number; suggestedQty: number; health: string }
+export async function computeReorderSuggestions(business: Business): Promise<ReorderSuggestionRow[]> {
+  const [variants, products, unitsSold] = await Promise.all([
+    productsApi.listVariants(business.id),
+    productsApi.listProducts(business.id),
+    productsApi.unitsSoldBySku(business.id, REORDER_WINDOW_DAYS),
+  ]);
+  const productTitle = new Map(products.map((p) => [p.id, p.title]));
+
+  return variants
+    .map((v) => {
+      const sold = (v.sku && unitsSold[v.sku]) || 0;
+      const avgDailyUnits = computeAvgDailyUnits(sold, REORDER_WINDOW_DAYS);
+      const health = classifyStockHealth(Number(v.inventory_qty) || 0, avgDailyUnits);
+      const { suggestedQty } = computeReorderQty(Number(v.inventory_qty) || 0, avgDailyUnits, REORDER_TARGET_COVER_DAYS);
+      return {
+        variantId: v.id, productId: v.product_id,
+        title: `${productTitle.get(v.product_id) || 'Product'}${v.title && v.title !== 'Default' ? ' · ' + v.title : ''}`,
+        sku: v.sku ?? null, stockQty: Number(v.inventory_qty) || 0, avgDailyUnits, suggestedQty,
+        health: health.status,
+      };
+    })
+    .filter((r) => (r.health === 'below_safe_level' || r.health === 'out_of_stock') && r.suggestedQty > 0)
+    .sort((a, b) => b.suggestedQty - a.suggestedQty);
+}
 
 export interface MonthlyCostPoint extends Record<CostCategory, number> {
   month: string;

@@ -1110,6 +1110,128 @@ export const glApi = {
   },
 };
 
+// ---------- Procurement & Purchasing (Phase 6) ----------
+export interface Supplier {
+  id: string;
+  business_id: string;
+  name: string;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  payment_terms?: string | null;
+  notes?: string | null;
+  is_active?: boolean;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  business_id: string;
+  supplier_id?: string | null;
+  po_number?: string | null;
+  status: string;
+  order_date: string;
+  expected_date?: string | null;
+  notes?: string | null;
+}
+
+export interface PurchaseOrderLine {
+  id: string;
+  purchase_order_id: string;
+  variant_id?: string | null;
+  description?: string | null;
+  quantity_ordered: number;
+  quantity_received: number;
+  unit_cost: number;
+}
+
+export interface SupplierBill {
+  id: string;
+  business_id: string;
+  supplier_id?: string | null;
+  purchase_order_id?: string | null;
+  bill_number?: string | null;
+  amount: number;
+  amount_paid: number;
+  status: string;
+  bill_date: string;
+  due_date?: string | null;
+}
+
+export const suppliersApi = {
+  async list(businessId: string): Promise<Supplier[]> {
+    return unwrap(await supabase.from('suppliers').select('*').eq('business_id', businessId).order('name')) || [];
+  },
+  async create(s: Partial<Supplier>): Promise<Supplier> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('suppliers').insert({ ...s, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<Supplier>): Promise<void> {
+    const { error } = await supabase.from('suppliers').update(patch).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('suppliers').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const purchaseOrdersApi = {
+  async list(businessId: string): Promise<PurchaseOrder[]> {
+    return unwrap(await supabase.from('purchase_orders').select('*').eq('business_id', businessId).order('order_date', { ascending: false })) || [];
+  },
+  async listLines(purchaseOrderId: string): Promise<PurchaseOrderLine[]> {
+    return unwrap(await supabase.from('purchase_order_lines').select('*').eq('purchase_order_id', purchaseOrderId)) || [];
+  },
+  // Creates a draft PO with its lines in one go.
+  async create(businessId: string, po: { supplier_id?: string | null; po_number?: string; expected_date?: string; notes?: string },
+    lines: Array<{ variant_id?: string | null; description?: string; quantity_ordered: number; unit_cost: number }>): Promise<PurchaseOrder> {
+    const user_id = await uid();
+    const created: PurchaseOrder = unwrap(await supabase.from('purchase_orders').insert({ ...po, business_id: businessId, user_id, status: 'draft' }).select().single());
+    if (lines.length) {
+      const { error } = await supabase.from('purchase_order_lines').insert(
+        lines.map((l) => ({ ...l, business_id: businessId, user_id, purchase_order_id: created.id })),
+      );
+      if (error) throw error;
+    }
+    return created;
+  },
+  async updateStatus(id: string, status: string): Promise<void> {
+    const { error } = await supabase.from('purchase_orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Atomic: records a goods receipt, updates inventory (WAC + qty), creates the
+  // supplier bill, and posts the Dr Inventory/Cr AP journal entry.
+  async receive(businessId: string, purchaseOrderId: string, lines: Array<{ po_line_id: string; quantity_received: number; unit_cost: number }>, billNumber?: string, dueDate?: string): Promise<string> {
+    const user_id = await uid();
+    const { data, error } = await supabase.rpc('receive_purchase_order', {
+      p_business_id: businessId, p_user_id: user_id, p_purchase_order_id: purchaseOrderId,
+      p_lines: lines, p_bill_number: billNumber ?? null, p_due_date: dueDate ?? null,
+    });
+    if (error) throw error;
+    return data as string;
+  },
+};
+
+export const supplierBillsApi = {
+  async list(businessId: string): Promise<SupplierBill[]> {
+    return unwrap(await supabase.from('supplier_bills').select('*').eq('business_id', businessId).order('due_date', { ascending: true, nullsFirst: false })) || [];
+  },
+  // Atomic: debits the bill's balance, credits the capital account, and posts
+  // the Dr AP/Cr Cash journal entry.
+  async pay(businessId: string, billId: string, capitalAccountId: string, amount: number, date?: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.rpc('pay_supplier_bill', {
+      p_business_id: businessId, p_user_id: user_id, p_bill_id: billId,
+      p_capital_account_id: capitalAccountId, p_amount: amount, p_date: date ?? new Date().toISOString().slice(0, 10),
+    });
+    if (error) throw error;
+  },
+};
+
 // ---------- Period closes (month-close snapshots, Phase 5) ----------
 export interface PeriodCloseRow {
   id: string;
