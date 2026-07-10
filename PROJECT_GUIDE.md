@@ -211,9 +211,21 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 | 7 | Sales, AR, Returns & COD reconciliation | ✅ Done — **`sales_schema.sql` needs Omar to run it** |
 | 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | ✅ Done — **`crm2_schema.sql` needs Omar to run it** |
 | 9 | Manufacturing BOM/MRP-lite + simple HR/Payroll | ✅ Done — **`bom_hr_schema.sql` needs Omar to run it** |
-| 10 | Command dashboard, audit trail, alerts, exports | Not started |
+| 10 | Command dashboard, audit trail, alerts, exports | ✅ Done — **`audit_schema.sql` needs Omar to run it** |
 
 Also delivered outside the numbered phases: full **CRM** (contacts/notes/activity/deals/tasks), the original **Capital/Costs/Inventory overhaul** (products, WAC, manufacturing, capital ledger — predates the ERP plan and is what Phase 2/4 built on top of).
+
+**All 10 phases are now code-complete, tested, and deployed to web + desktop.** The only remaining step is Omar running the deferred SQL files in the Supabase SQL editor — nothing below has been run yet. Run them **in this order** (later files reference tables/functions from earlier ones):
+
+1. `supabase/gl_schema.sql` (Phase 4 — chart of accounts, `post_journal_entry`)
+2. `supabase/finance2_schema.sql` (Phase 5 — budgets, goals, period closes)
+3. `supabase/purchasing_schema.sql` (Phase 6 — suppliers, POs, `receive_purchase_order`, `pay_supplier_bill`)
+4. `supabase/sales_schema.sql` (Phase 7 — sales orders, invoices, returns, COD remittances)
+5. `supabase/crm2_schema.sql` (Phase 8 — tickets, follow-ups, `merge_contacts`)
+6. `supabase/bom_hr_schema.sql` (Phase 9 — BOM, `record_bom_batch`, employees/payroll, `process_payroll_run`)
+7. `supabase/audit_schema.sql` (Phase 10 — `audit_log`)
+
+For each: `Set-Clipboard -Value (Get-Content "supabase\<file>.sql" -Raw)` → paste into `https://supabase.com/dashboard/project/gyqqrbchpepvchjgweep/sql/new` → Run. All are idempotent (`create table if not exists` / `create or replace function`), so re-running one that's already applied is harmless. Phase 3 (Shopify product/order sync) remains separately blocked on Omar creating a Shopify app — unrelated to this SQL batch.
 
 ---
 
@@ -494,3 +506,28 @@ Salaries & Wages 5070/Cr capital GL), `leave_records` (pending/approved/
 rejected, no accrual balances). New top-level **HR** section (Employees,
 Payroll, Leave). `bom_hr_schema.sql` deferred per the batched-handoff note
 in #17.
+
+#### 21. Command dashboard, audit trail, alerts, exports (FEATURE / ERP-P10)
+`alerts.ts` pure engine (tested — 5 cases): `buildAlerts` takes pre-aggregated
+counts/amounts (out-of-stock, low-stock, overdue bills/invoices, over-budget
+categories, negative-margin products, COD outstanding too long, overdue
+follow-ups) and returns a sorted, prioritized list (critical before warning,
+then by count) — the filtering itself stays in the component, mirroring how
+every other module fetches then filters. New `AlertCenter` (in
+`components/shared/`) does that fetching across Inventory/Payables/
+Receivables/Costs/COD/CRM and renders the result at the top of Overview; new
+`CommandCenterStrip` adds five cross-module KPIs (cash position summed
+across capital accounts, inventory value at WAC, outstanding payables/
+receivables, COD receivable outstanding) right below it. `audit_schema.sql`:
+append-only `audit_log` (table_name, row_id, action, new_data jsonb) —
+deliberately **not** wired into every CRUD edit, only the hard-to-reverse
+atomic actions (PO receiving, bill/invoice payments, sales returns, COD
+remittances, contact merges, BOM batches, payroll runs) via a fire-and-
+forget `auditApi.log` call after each RPC succeeds, so logging failures never
+block the underlying action. New **Audit Log** sub-tab under Setup (with
+CSV export). `src/lib/csv.ts` — minimal Blob+anchor CSV export helper (no
+filesystem access needed, works in both web and Electron) — wired onto
+Payables, Receivables (Customer Invoices), and the General Ledger journal
+export buttons. `audit_schema.sql` deferred per the batched-handoff note in
+#17 — **this closes out the 10-phase ERP master plan; see the consolidated
+SQL handoff list below the status table.**
