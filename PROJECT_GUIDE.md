@@ -210,7 +210,7 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 | 6 | Procurement & Purchasing — suppliers, POs, receiving, AP, reorder suggestions | ✅ Done — **`purchasing_schema.sql` needs Omar to run it** |
 | 7 | Sales, AR, Returns & COD reconciliation | ✅ Done — **`sales_schema.sql` needs Omar to run it** |
 | 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | ✅ Done — **`crm2_schema.sql` needs Omar to run it** |
-| 9 | Manufacturing BOM/MRP-lite + simple HR/Payroll | Not started |
+| 9 | Manufacturing BOM/MRP-lite + simple HR/Payroll | ✅ Done — **`bom_hr_schema.sql` needs Omar to run it** |
 | 10 | Command dashboard, audit trail, alerts, exports | Not started |
 
 Also delivered outside the numbered phases: full **CRM** (contacts/notes/activity/deals/tasks), the original **Capital/Costs/Inventory overhaul** (products, WAC, manufacturing, capital ledger — predates the ERP plan and is what Phase 2/4 built on top of).
@@ -472,3 +472,25 @@ and CrmDashboardTab (segment distribution, top-10 customers, repeat-purchase
 rate, weighted pipeline, new-contacts-per-month). New **Dashboard** and
 **Tickets** sub-tabs added to the CRM section. `crm2_schema.sql` deferred
 per the batched-handoff note in #17.
+
+#### 20. Manufacturing BOM/MRP-lite + simple HR/Payroll (FEATURE / ERP-P9)
+`mrp.ts` pure engine (tested — 6 cases): `computeMaterialShortfall` (qty
+needed vs. in stock per component) and `computeMaxBuildable` (units limited
+by the tightest component). `bom_hr_schema.sql`: `bill_of_materials` +
+`bom_components` (finished variant → component variants + qty-per-unit),
+atomic RPC `record_bom_batch` — validates every component has enough stock
+first (raises rather than allowing a partial/negative-stock batch), deducts
+each component, auto-fills the finished unit's cost from component WAC,
+blends the finished variant's WAC, and — only for extra labor/overhead cost
+items actually paid in cash — debits the capital account and posts
+Dr Inventory/Cr [capital GL] (material cost itself is a same-account
+inventory-to-inventory transform since every variant shares GL code 1060,
+so it nets to zero and needs no journal line). New BOM tab in Inventory
+shows buildable-now count per BOM and a shortfall table when a requested
+batch exceeds stock. Simple HR: `employees`, `payroll_runs`/
+`payroll_run_lines` (monthly runs pre-filled from active employees' salary,
+bonus/deductions editable per line), atomic RPC `process_payroll_run` (Dr
+Salaries & Wages 5070/Cr capital GL), `leave_records` (pending/approved/
+rejected, no accrual balances). New top-level **HR** section (Employees,
+Payroll, Leave). `bom_hr_schema.sql` deferred per the batched-handoff note
+in #17.
