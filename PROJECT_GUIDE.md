@@ -209,7 +209,7 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 | 5 | Finance 2.0 — budgeting, goals, 13-week cash-flow forecast, month-close, drawings tracking, profitability reports | ✅ Done — **`finance2_schema.sql` needs Omar to run it** |
 | 6 | Procurement & Purchasing — suppliers, POs, receiving, AP, reorder suggestions | ✅ Done — **`purchasing_schema.sql` needs Omar to run it** |
 | 7 | Sales, AR, Returns & COD reconciliation | ✅ Done — **`sales_schema.sql` needs Omar to run it** |
-| 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | Not started |
+| 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | ✅ Done — **`crm2_schema.sql` needs Omar to run it** |
 | 9 | Manufacturing BOM/MRP-lite + simple HR/Payroll | Not started |
 | 10 | Command dashboard, audit trail, alerts, exports | Not started |
 
@@ -451,3 +451,24 @@ either as a cash refund or an AR credit note), `record_cod_remittance`
 expense, clears COD Receivable). New top-level **Sales** section (Orders,
 Invoices w/ AR aging, Returns, COD w/ RTO-rate stat + remittance recording) —
 Egypt-specific differentiator given how common COD is here.
+
+#### 19. CRM 2.0 (FEATURE / ERP-P8)
+`rfm.ts` pure engine (tested — 10 cases): `classifyRfmSegment` — rule-based
+(not quintile-based; customer counts here are too small for quintiles to be
+meaningful) thresholds over orders-count + recency-days → Champion / Loyal
+Customer / Promising New Customer / At Risk of Churning / Lost Customer / No
+Orders Yet; plus `computeWeightedPipelineValue` and `computeStageFunnel` for
+deal pipeline math. `crm2_schema.sql`: adds `follow_up_date` to contacts and
+`win_loss_reason` to deals, new `tickets`/`ticket_messages` tables, atomic RPC
+`merge_contacts` (re-points notes/activities/deals/tasks/tickets from a
+duplicate contact onto the primary, unions tags, keeps the greater of
+total_spent/orders_count, deletes the duplicate). CustomersTab rewritten:
+segment badges + filter chips, overdue follow-up banner, click-to-WhatsApp
+(`wa.me/<digits>`) and click-to-call links, duplicate-detection dialog with
+one-click merge, bulk row-select + bulk status update. DealsTab rewritten:
+weighted pipeline value + stage funnel cards, win/loss reason prompt on
+close, expected-close date. New TicketsTab (status/priority, message thread)
+and CrmDashboardTab (segment distribution, top-10 customers, repeat-purchase
+rate, weighted pipeline, new-contacts-per-month). New **Dashboard** and
+**Tickets** sub-tabs added to the CRM section. `crm2_schema.sql` deferred
+per the batched-handoff note in #17.
