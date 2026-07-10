@@ -208,7 +208,7 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 | 4 | Double-entry General Ledger — chart of accounts, atomic RPC, Trial Balance, GL statements, auto-posting | ✅ Done — **`gl_schema.sql` needs Omar to run it** |
 | 5 | Finance 2.0 — budgeting, goals, 13-week cash-flow forecast, month-close, drawings tracking, profitability reports | ✅ Done — **`finance2_schema.sql` needs Omar to run it** |
 | 6 | Procurement & Purchasing — suppliers, POs, receiving, AP, reorder suggestions | ✅ Done — **`purchasing_schema.sql` needs Omar to run it** |
-| 7 | Sales, AR, Returns & COD reconciliation | Not started |
+| 7 | Sales, AR, Returns & COD reconciliation | ✅ Done — **`sales_schema.sql` needs Omar to run it** |
 | 8 | CRM 2.0 — RFM segmentation, tickets, pipeline analytics, WhatsApp/call links, dedupe | Not started |
 | 9 | Manufacturing BOM/MRP-lite + simple HR/Payroll | Not started |
 | 10 | Command dashboard, audit trail, alerts, exports | Not started |
@@ -436,3 +436,18 @@ buckets + pay-bill dialog). **Note**: per Omar's request, from this phase
 onward all pending `.sql` files and Edge Function deploys are being batched
 for a single end-of-session handoff instead of one per phase — check the
 bottom of this file's status table for the current list of un-run migrations.
+
+#### 18. Sales, AR, Returns & COD reconciliation (FEATURE / ERP-P7)
+`cod.ts` pure engine (tested — 4 cases): RTO-rate calc. `sales_schema.sql`:
+sales_orders/lines (manual/wholesale channel — draft→confirmed→invoiced;
+Shopify orders remain the automatic channel and don't go through this),
+customer_invoices, invoice_payments, sales_returns, cod_remittances + three
+atomic RPCs — `create_customer_invoice` (deducts stock, posts Dr AR-or-COD
+Receivable/Cr Sales Revenue AND Dr COGS/Cr Inventory in one transaction),
+`pay_customer_invoice` (Dr Cash/Cr AR, prepaid only), `process_sales_return`
+(restocks at prior cost — no WAC blend on a return — and reverses revenue,
+either as a cash refund or an AR credit note), `record_cod_remittance`
+(settles a batch of COD invoices, splits gross into net-cash + courier-fee-
+expense, clears COD Receivable). New top-level **Sales** section (Orders,
+Invoices w/ AR aging, Returns, COD w/ RTO-rate stat + remittance recording) —
+Egypt-specific differentiator given how common COD is here.
