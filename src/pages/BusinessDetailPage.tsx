@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import { businessesApi, type Business } from '@/services/db';
 import { computeBusinessProfit } from '@/finance/compute';
 import type { ProfitCalculation } from '@/finance/profit-engine';
+import { resolveSection } from '@/config/businessSections';
+import { useBusinessStore } from '@/stores/businessStore';
 import OverviewTab from '@/components/finance/OverviewTab';
 import DataEntryTab from '@/components/finance/DataEntryTab';
 import CostsTab from '@/components/finance/CostsTab';
@@ -34,72 +35,6 @@ import AuditLogTab from '@/components/finance/AuditLogTab';
 import EmployeesTab from '@/components/hr/EmployeesTab';
 import PayrollTab from '@/components/hr/PayrollTab';
 import LeaveTab from '@/components/hr/LeaveTab';
-import { cn } from '@/lib/utils';
-
-const SECTIONS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'finance', label: 'Finance' },
-  { key: 'inventory', label: 'Inventory' },
-  { key: 'sales', label: 'Sales' },
-  { key: 'crm', label: 'CRM' },
-  { key: 'hr', label: 'HR' },
-  { key: 'setup', label: 'Setup' },
-] as const;
-
-type SectionKey = (typeof SECTIONS)[number]['key'];
-
-const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; label: string }[]> = {
-  finance: [
-    { key: 'capital', label: 'Capital' },
-    { key: 'data', label: 'Data' },
-    { key: 'costs', label: 'Costs' },
-    { key: 'balance', label: 'Assets & Liabilities' },
-    { key: 'statements', label: 'Statements' },
-    { key: 'ledger', label: 'General Ledger' },
-    { key: 'goals', label: 'Goals' },
-    { key: 'profitability', label: 'Profitability' },
-    { key: 'payables', label: 'Payables' },
-  ],
-  inventory: [
-    { key: 'products', label: 'Products' },
-    { key: 'unit-economics', label: 'Unit Economics' },
-    { key: 'manufacturing', label: 'Manufacturing' },
-    { key: 'suppliers', label: 'Suppliers' },
-    { key: 'purchase-orders', label: 'Purchase Orders' },
-    { key: 'bom', label: 'Bill of Materials' },
-  ],
-  sales: [
-    { key: 'orders', label: 'Orders' },
-    { key: 'invoices', label: 'Invoices' },
-    { key: 'returns', label: 'Returns' },
-    { key: 'cod', label: 'COD' },
-  ],
-  crm: [
-    { key: 'crm-dashboard', label: 'Dashboard' },
-    { key: 'customers', label: 'Customers' },
-    { key: 'deals', label: 'Deals' },
-    { key: 'tasks', label: 'Tasks' },
-    { key: 'tickets', label: 'Tickets' },
-  ],
-  hr: [
-    { key: 'employees', label: 'Employees' },
-    { key: 'payroll', label: 'Payroll' },
-    { key: 'leave', label: 'Leave' },
-  ],
-  setup: [
-    { key: 'integrations', label: 'Integrations' },
-    { key: 'audit-log', label: 'Audit Log' },
-  ],
-};
-
-const DEFAULT_SUB_TAB: Record<Exclude<SectionKey, 'overview'>, string> = {
-  finance: 'capital',
-  inventory: 'products',
-  sales: 'orders',
-  crm: 'customers',
-  hr: 'employees',
-  setup: 'integrations',
-};
 
 function monthRange(): { start: string; end: string } {
   const now = new Date();
@@ -109,21 +44,33 @@ function monthRange(): { start: string; end: string } {
 }
 
 export default function BusinessDetailPage() {
-  const { id } = useParams();
+  const { id, section: sectionParam, subTab: subTabParam } = useParams<{ id: string; section: string; subTab?: string }>();
   const navigate = useNavigate();
+  const setLastActiveId = useBusinessStore((s) => s.setLastActiveId);
   const [business, setBusiness] = useState<Business | null>(null);
-  const [section, setSection] = useState<SectionKey>('overview');
-  const [subTabBySection, setSubTabBySection] = useState<Record<string, string>>(DEFAULT_SUB_TAB);
   const init = useMemo(monthRange, []);
   const [start, setStart] = useState(init.start);
   const [end, setEnd] = useState(init.end);
   const [profit, setProfit] = useState<ProfitCalculation | null>(null);
   const [version, setVersion] = useState(0);
 
+  const { section, subTab: activeSubTab } = resolveSection(sectionParam, subTabParam);
+
   useEffect(() => {
     if (!id) return;
     businessesApi.get(id).then(setBusiness).catch(() => navigate('/businesses'));
-  }, [id, navigate]);
+    setLastActiveId(id);
+  }, [id, navigate, setLastActiveId]);
+
+  // Keep the URL in sync with the resolved (possibly corrected) section/subtab —
+  // e.g. an invalid or missing param redirects to a valid one.
+  useEffect(() => {
+    if (!id) return;
+    if (sectionParam !== section) { navigate(`/businesses/${id}/${section}`, { replace: true }); return; }
+    if (section !== 'overview' && subTabParam !== activeSubTab) {
+      navigate(`/businesses/${id}/${section}/${activeSubTab}`, { replace: true });
+    }
+  }, [id, section, sectionParam, activeSubTab, subTabParam, navigate]);
 
   useEffect(() => {
     if (!business) return;
@@ -135,63 +82,13 @@ export default function BusinessDetailPage() {
 
   if (!business) return <p className="text-muted-foreground">Loading…</p>;
 
-  const activeSubTab = section === 'overview' ? null : subTabBySection[section];
-  const setActiveSubTab = (key: string) => setSubTabBySection((s) => ({ ...s, [section]: key }));
-
   return (
     <div>
-      <button onClick={() => navigate('/businesses')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> All businesses
-      </button>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-lg">
-            {business.name.charAt(0).toUpperCase()}
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">{business.name}</h1>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2" />
-          <span className="text-muted-foreground">to</span>
-          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2" />
-        </div>
+      <div className="flex items-center justify-end gap-2 text-sm mb-5">
+        <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2" />
+        <span className="text-muted-foreground">to</span>
+        <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2" />
       </div>
-
-      {/* Top-level sections */}
-      <div className="flex flex-wrap gap-1 mb-1">
-        {SECTIONS.map((s) => (
-          <button
-            key={s.key}
-            onClick={() => setSection(s.key)}
-            className={cn(
-              'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
-              section === s.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Sub-tabs for the active section (Overview has none) */}
-      {section !== 'overview' && (
-        <div className="flex flex-wrap gap-1 border-b border-border mb-5 mt-2">
-          {SUB_TABS[section].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setActiveSubTab(t.key)}
-              className={cn(
-                'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-                activeSubTab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {section === 'overview' && <div className="mb-5" />}
 
       {section === 'overview' && <OverviewTab profit={profit} business={business} />}
 

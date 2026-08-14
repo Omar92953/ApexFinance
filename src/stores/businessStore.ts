@@ -1,10 +1,14 @@
 import { create } from 'zustand';
 import { businessesApi, type Business } from '@/services/db';
 
+const LAST_ACTIVE_KEY = 'apex.lastActiveBusinessId';
+
 interface BusinessState {
   businesses: Business[];
   loading: boolean;
   loaded: boolean;
+  lastActiveId: string | null;
+  setLastActiveId: (id: string) => void;
   fetch: () => Promise<void>;
   create: (b: Partial<Business>) => Promise<Business>;
   update: (id: string, patch: Partial<Business>) => Promise<void>;
@@ -15,6 +19,12 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   businesses: [],
   loading: false,
   loaded: false,
+  lastActiveId: typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_ACTIVE_KEY) : null,
+
+  setLastActiveId: (id) => {
+    try { localStorage.setItem(LAST_ACTIVE_KEY, id); } catch { /* best-effort */ }
+    set({ lastActiveId: id });
+  },
 
   fetch: async () => {
     set({ loading: true });
@@ -39,6 +49,9 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   remove: async (id) => {
     await businessesApi.remove(id);
-    set({ businesses: get().businesses.filter((x) => x.id !== id) });
+    set((s) => ({
+      businesses: s.businesses.filter((x) => x.id !== id),
+      lastActiveId: s.lastActiveId === id ? null : s.lastActiveId,
+    }));
   },
 }));

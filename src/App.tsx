@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import AuthPage from '@/components/auth/AuthPage';
 import MainLayout from '@/components/layout/MainLayout';
-import DashboardPage from '@/pages/DashboardPage';
+import RootRedirect from '@/pages/RootRedirect';
 import BusinessesPage from '@/pages/BusinessesPage';
 import BusinessDetailPage from '@/pages/BusinessDetailPage';
 import SettingsPage from '@/pages/SettingsPage';
@@ -34,9 +34,11 @@ export default function App() {
   return (
     <Routes>
       <Route element={<MainLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<RootRedirect />} />
         <Route path="/businesses" element={<BusinessesPage />} />
-        <Route path="/businesses/:id" element={<BusinessDetailPage />} />
+        <Route path="/businesses/:id" element={<Navigate to="overview" relative="path" replace />} />
+        <Route path="/businesses/:id/:section" element={<BusinessDetailPage />} />
+        <Route path="/businesses/:id/:section/:subTab" element={<BusinessDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

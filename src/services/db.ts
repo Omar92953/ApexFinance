@@ -316,6 +316,16 @@ export interface TaskRow {
   title: string;
   due_date?: string | null;
   is_done: boolean;
+  // Work-item fields (Product Plan v2, Phase 2) — a task spawned from a signal
+  // keeps a pointer back to it so the same signal can't queue twice.
+  priority?: string;
+  assignee?: string | null;
+  notes?: string | null;
+  source_signal_id?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
 }
 
 async function logActivity(businessId: string, contactId: string, type: string, description: string) {
@@ -418,10 +428,73 @@ export const tasksApi = {
     return unwrap(await supabase.from('tasks').insert({ ...t, user_id }).select().single());
   },
   async update(id: string, patch: Partial<TaskRow>): Promise<TaskRow> {
-    return unwrap(await supabase.from('tasks').update(patch).eq('id', id).select().single());
+    const withTimestamp = patch.is_done !== undefined
+      ? { ...patch, completed_at: patch.is_done ? new Date().toISOString() : null }
+      : patch;
+    return unwrap(await supabase.from('tasks').update(withTimestamp).eq('id', id).select().single());
   },
   async remove(id: string): Promise<void> {
     const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Open work items only, soonest-due first — powers the Command dashboard.
+  async listOpen(businessId: string): Promise<TaskRow[]> {
+    return unwrap(await supabase.from('tasks').select('*').eq('business_id', businessId).eq('is_done', false)
+      .order('due_date', { ascending: true, nullsFirst: false })) || [];
+  },
+  // Turns a signal into owned, dated work. The partial unique index on
+  // (business_id, source_signal_id) makes this idempotent per signal, so
+  // clicking twice can't queue the same job — we swallow that conflict.
+  async createFromSignal(businessId: string, signal: {
+    id: string; title: string; suggestedAction: string; entity?: { type: string; id: string } | null; severity: string;
+  }, dueDate?: string): Promise<TaskRow | null> {
+    const user_id = await uid();
+    const { data, error } = await supabase.from('tasks').insert({
+      user_id,
+      business_id: businessId,
+      title: signal.suggestedAction,
+      notes: signal.title,
+      due_date: dueDate ?? new Date().toISOString().slice(0, 10),
+      priority: signal.severity === 'critical' ? 'urgent' : signal.severity === 'warning' ? 'high' : 'normal',
+      source_signal_id: signal.id,
+      entity_type: signal.entity?.type ?? null,
+      entity_id: signal.entity?.id ?? null,
+      contact_id: signal.entity?.type === 'contact' ? signal.entity.id : null,
+      deal_id: signal.entity?.type === 'deal' ? signal.entity.id : null,
+    }).select().single();
+
+    if (error) {
+      if (error.code === '23505') return null; // already queued — not an error
+      throw error;
+    }
+    return data as TaskRow;
+  },
+};
+
+// ---------- Signal dismissals (Product Plan v2, Phase 1) ----------
+export interface SignalDismissal {
+  id: string;
+  business_id: string;
+  signal_id: string;
+  snoozed_until?: string | null;
+  reason?: string | null;
+}
+
+export const signalsApi = {
+  async listDismissals(businessId: string): Promise<SignalDismissal[]> {
+    return unwrap(await supabase.from('signal_dismissals').select('*').eq('business_id', businessId)) || [];
+  },
+  // snoozedUntil null = dismiss indefinitely.
+  async dismiss(businessId: string, signalId: string, snoozedUntil?: string | null, reason?: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('signal_dismissals').upsert(
+      { user_id, business_id: businessId, signal_id: signalId, snoozed_until: snoozedUntil ?? null, reason: reason ?? null },
+      { onConflict: 'business_id,signal_id' },
+    );
+    if (error) throw error;
+  },
+  async restore(businessId: string, signalId: string): Promise<void> {
+    const { error } = await supabase.from('signal_dismissals').delete().eq('business_id', businessId).eq('signal_id', signalId);
     if (error) throw error;
   },
 };

@@ -1,12 +1,19 @@
 import { ProfitEngine, type ProfitConfig, type AdditionalCost } from './profit-engine';
 import type { Business, AdditionalCostRow } from '@/services/db';
-import { metricsApi, productsApi, shippingApi, costRulesApi, capitalApi } from '@/services/db';
+import {
+  metricsApi, productsApi, shippingApi, costRulesApi, capitalApi,
+  customerInvoicesApi, supplierBillsApi, dealsApi, contactsApi, costBudgetsApi, signalsApi,
+} from '@/services/db';
 import { supabase } from '@/lib/supabase';
 import { computeLtvPredictions, type OrderRow } from './ltv-engine';
 import { computeCostRules, dateOverlapDays, type CostRuleBreakdown, type CostRuleContext, type CostCategory } from './cost-rules';
-import { computeCashFlowForecast, type ForecastWeek } from './forecast';
+import {
+  computeCashFlowForecast, invoiceReceipts, billPayments, forecastSales, recurringOutflows,
+  type ForecastWeek,
+} from './forecast';
 import { computeAvgDailyUnits, classifyStockHealth } from './stock-health';
 import { computeReorderQty } from './reorder';
+import { buildSignals, type Signal } from './signals';
 
 const REORDER_WINDOW_DAYS = 30;
 const REORDER_TARGET_COVER_DAYS = 30;
@@ -289,27 +296,102 @@ export async function computeProductProfitability(business: Business, start: str
   }).filter((r) => r.unitsSold > 0).sort((a, b) => b.contributionTotal - a.contributionTotal);
 }
 
-// 13-week cash-flow forecast: starting balance from capital accounts, average
-// daily net cash generation from the trailing 30 days, weekly-equivalent fixed
-// costs from active cost rules.
+// 13-week DIRECT-METHOD cash-flow forecast. Assembles real scheduled cash
+// movements — open invoices on their due dates, COD settling after the courier
+// lag, supplier bills, recurring fixed costs — plus extrapolated future sales,
+// then buckets them week by week. Unlike the old straight-line version, the
+// weeks differ from each other because the underlying obligations do.
+export const DEFAULT_COD_LAG_DAYS = 10;
+
 export async function computeCashFlowForecastForBusiness(business: Business, weeks = 13): Promise<ForecastWeek[]> {
-  const end = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
   const start = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  const [accounts, calc, rules] = await Promise.all([
+  const [accounts, calc, rules, invoices, bills] = await Promise.all([
     capitalApi.listAccounts(business.id),
-    computeBusinessProfit(business, start, end),
+    computeBusinessProfit(business, start, today),
     costRulesApi.list(business.id),
+    customerInvoicesApi.list(business.id).catch(() => []),
+    supplierBillsApi.list(business.id).catch(() => []),
   ]);
-  const startingBalance = accounts.reduce((s, a) => s + (Number(a.current_balance) || 0), 0);
-  const avgDailyNetInflow = calc.netProfit / 30;
 
-  const weeklyFixedCosts = rules
+  const startingBalance = accounts.reduce((s, a) => s + (Number(a.current_balance) || 0), 0);
+
+  const monthlyFixedCosts = rules
     .filter((r) => r.is_active && ['fixed_daily', 'fixed_weekly', 'fixed_monthly'].includes(r.basis))
     .reduce((sum, r) => {
       const perDay = r.basis === 'fixed_daily' ? r.value : r.basis === 'fixed_weekly' ? r.value / 7 : r.value / 30;
-      return sum + perDay * 7;
+      return sum + perDay * 30;
     }, 0);
 
-  return computeCashFlowForecast({ startingBalance, avgDailyNetInflow, weeklyFixedCosts }, weeks);
+  // Gross margin per day is the right proxy for future sales cash — net profit
+  // would double-count the fixed costs we're already scheduling explicitly.
+  const avgDailyGross = (calc.netSales - calc.cogsTotal) / 30;
+
+  const flows = [
+    ...invoiceReceipts(invoices, today, DEFAULT_COD_LAG_DAYS),
+    ...billPayments(bills, today),
+    ...forecastSales(avgDailyGross, today, weeks),
+    ...recurringOutflows(monthlyFixedCosts, today, weeks),
+  ];
+
+  return computeCashFlowForecast({ today, startingBalance, flows, weeks });
+}
+
+// Gathers live state from every module, runs the Signal Engine, and filters out
+// anything the user has dismissed or snoozed. This is the single function the
+// Command dashboard (and anything else wanting "what needs attention") calls.
+export async function collectSignalsForBusiness(business: Business): Promise<Signal[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+
+  const [invoices, bills, variants, unitsBySku, deals, contacts, budgets, rules, forecast, dismissals] = await Promise.all([
+    customerInvoicesApi.list(business.id).catch(() => []),
+    supplierBillsApi.list(business.id).catch(() => []),
+    productsApi.listVariants(business.id).catch(() => []),
+    productsApi.unitsSoldBySku(business.id, REORDER_WINDOW_DAYS).catch(() => ({} as Record<string, number>)),
+    dealsApi.list(business.id).catch(() => []),
+    contactsApi.list(business.id).catch(() => []),
+    costBudgetsApi.list(business.id, monthStart.slice(0, 7)).catch(() => []),
+    costRulesApi.list(business.id).catch(() => []),
+    computeCashFlowForecastForBusiness(business).catch(() => []),
+    signalsApi.listDismissals(business.id).catch(() => []),
+  ]);
+
+  // Actual spend per category this month, so budget signals compare like for like.
+  let actualByCategory: Record<string, number> = {};
+  try {
+    const ctx = await buildCostRuleContext(business, monthStart, today);
+    actualByCategory = computeCostRules(rules.filter((r) => r.is_active), ctx).totalsByCategory as unknown as Record<string, number>;
+  } catch { /* budgets simply won't signal if costs can't be computed */ }
+
+  const signals = buildSignals({
+    today,
+    invoices,
+    bills,
+    variants: variants.map((v) => ({
+      id: v.id,
+      sku: v.sku,
+      title: v.title,
+      price: Number(v.price) || 0,
+      cost_per_item: Number(v.cost_per_item) || 0,
+      inventory_qty: Number(v.inventory_qty) || 0,
+      avgDailyUnits: computeAvgDailyUnits(v.sku ? unitsBySku[v.sku] || 0 : 0, REORDER_WINDOW_DAYS),
+    })),
+    deals,
+    contacts,
+    budgets: budgets.map((b) => ({
+      category: b.category,
+      budget_amount: Number(b.budget_amount) || 0,
+      actual: actualByCategory[b.category] || 0,
+    })),
+    forecast,
+  });
+
+  const suppressed = new Map(dismissals.map((d) => [d.signal_id, d.snoozed_until]));
+  return signals.filter((s) => {
+    if (!suppressed.has(s.id)) return true;
+    const until = suppressed.get(s.id);
+    return until ? until < today : false; // snooze expired => show again
+  });
 }

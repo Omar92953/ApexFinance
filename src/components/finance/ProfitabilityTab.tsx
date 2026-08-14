@@ -7,9 +7,20 @@ import {
   computeProductProfitability, computeMonthlyPnLTrend, computeCashFlowForecastForBusiness,
   computeBusinessProfit, type ProductProfitRow, type MonthlyPnLPoint,
 } from '@/finance/compute';
-import { weeksUntilNegative, type ForecastWeek } from '@/finance/forecast';
+import { weeksUntilNegative, troughBalance, summariseByKind, type ForecastWeek, type FlowKind } from '@/finance/forecast';
 import { Button } from '@/components/ui/button';
 import { cn, formatCurrency } from '@/lib/utils';
+
+const KIND_LABEL: Record<FlowKind, string> = {
+  invoice_receipt: 'Customer invoices collected',
+  cod_remittance: 'COD remittances',
+  forecast_sales: 'Expected new sales',
+  bill_payment: 'Supplier bills',
+  po_commitment: 'Purchase order commitments',
+  payroll: 'Payroll',
+  recurring_cost: 'Recurring fixed costs',
+  other: 'Other',
+};
 
 export default function ProfitabilityTab({ business, start, end }: { business: Business; start: string; end: string }) {
   const cur = business.currency ?? 'EGP';
@@ -36,6 +47,10 @@ export default function ProfitabilityTab({ business, start, end }: { business: B
   useEffect(() => { load(); }, [business.id, start, end]);
 
   const runwayWeeks = useMemo(() => weeksUntilNegative(forecast), [forecast]);
+  const trough = useMemo(() => troughBalance(forecast), [forecast]);
+  const kindBreakdown = useMemo(() => summariseByKind(forecast), [forecast]);
+  const totalIn = useMemo(() => forecast.reduce((s, w) => s + w.inflows, 0), [forecast]);
+  const totalOut = useMemo(() => forecast.reduce((s, w) => s + w.outflows, 0), [forecast]);
   const thisMonthKey = new Date().toISOString().slice(0, 7);
   const alreadyClosed = closes.some((c) => c.period_key === thisMonthKey);
 
@@ -117,7 +132,32 @@ export default function ProfitabilityTab({ business, start, end }: { business: B
             </span>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Straight-line projection from your last 30 days of net cash generation, plus recurring fixed cost rules. Gets more accurate once Procurement/Payroll are wired in.</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Direct method — every week is built from real dated obligations: open invoices on their due dates,
+          COD settling after the courier lag, supplier bills, and recurring costs. Weeks differ because the
+          underlying commitments do.
+        </p>
+
+        {trough && (
+          <div className="flex flex-wrap gap-4 mb-3 text-xs">
+            <div>
+              <span className="text-muted-foreground">Lowest point </span>
+              <span className={cn('font-semibold tabular-nums', trough.balance < 0 ? 'text-destructive' : 'text-foreground')}>
+                {formatCurrency(trough.balance, cur)}
+              </span>
+              <span className="text-muted-foreground"> in week {trough.week}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Expected in </span>
+              <span className="font-semibold tabular-nums text-success">{formatCurrency(totalIn, cur)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Committed out </span>
+              <span className="font-semibold tabular-nums text-destructive">{formatCurrency(totalOut, cur)}</span>
+            </div>
+          </div>
+        )}
+
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={forecast} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -129,6 +169,22 @@ export default function ProfitabilityTab({ business, start, end }: { business: B
             </AreaChart>
           </ResponsiveContainer>
         </div>
+
+        {kindBreakdown.length > 0 && (
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="text-xs font-medium mb-2">What drives it over 13 weeks</div>
+            <div className="space-y-1">
+              {kindBreakdown.map(({ kind, total }) => (
+                <div key={kind} className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{KIND_LABEL[kind] ?? kind}</span>
+                  <span className={cn('tabular-nums font-medium', total >= 0 ? 'text-success' : 'text-destructive')}>
+                    {total >= 0 ? '+' : ''}{formatCurrency(total, cur)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Month close */}
