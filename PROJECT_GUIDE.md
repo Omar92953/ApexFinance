@@ -2,9 +2,15 @@
 
 ## 📝 Project Summary
 
-Apex Business Manager is a **business management platform** for Omar's e-commerce
-businesses (currently: a Shopify keychain store) — evolving from a finance tracker
-into a full **ERP** (Enterprise Resource Planning) system, per the master plan.
+Apex Business Manager is a **business management platform** for Omar's businesses —
+evolving from a finance tracker into a full **ERP** (Enterprise Resource Planning)
+system, per the master plan.
+
+> **Not e-commerce-only.** It serves four verticals — **e-commerce, retail,
+> wholesale and service/agency** — and each business picks its type, which gates
+> which sections, KPIs and alerts exist for that workspace. See session record #25
+> and `PRODUCT_PLAN.md` §0. Don't add a feature that assumes stock, couriers, COD or
+> ad spend without gating it behind the matching capability.
 
 ### Purpose & Functionality
 - **Finance & Cost Management**: Exact net profit from real revenue, COGS, ad spend,
@@ -81,7 +87,7 @@ into a full **ERP** (Enterprise Resource Planning) system, per the master plan.
 
 > [!IMPORTANT]
 > **Mandatory Verification Checklist** — before calling any task done:
-> 1. `npm test` — all vitest suites green (currently 40 tests across stock-health, cost-rules, ledger).
+> 1. `npm test` — all vitest suites green (currently **146 tests**; every new pure module adds its own).
 > 2. `npm run build` — `tsc && vite build` clean, no type errors.
 > 3. If UI changed: rebuild the desktop app (`npm run build:electron`) and relaunch it to eyeball the change.
 > 4. Commit + push → confirm the GitHub Actions web deploy run finishes with `success` (don't just push and assume).
