@@ -3,8 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { businessesApi, type Business } from '@/services/db';
 import { computeBusinessProfit } from '@/finance/compute';
 import type { ProfitCalculation } from '@/finance/profit-engine';
-import { resolveSection } from '@/config/businessSections';
+import { resolveSectionFor } from '@/config/businessSections';
 import { useBusinessStore } from '@/stores/businessStore';
+import { useCapabilities } from '@/hooks/useCapabilities';
+import ProjectsTab from '@/components/projects/ProjectsTab';
+import RateCardsTab from '@/components/projects/RateCardsTab';
+import TimeBillingTab from '@/components/projects/TimeBillingTab';
 import OverviewTab from '@/components/finance/OverviewTab';
 import DataEntryTab from '@/components/finance/DataEntryTab';
 import CostsTab from '@/components/finance/CostsTab';
@@ -32,6 +36,7 @@ import CodReconciliationTab from '@/components/sales/CodReconciliationTab';
 import TicketsTab from '@/components/crm/TicketsTab';
 import CrmDashboardTab from '@/components/crm/CrmDashboardTab';
 import AuditLogTab from '@/components/finance/AuditLogTab';
+import WorkspaceSetupTab from '@/components/finance/WorkspaceSetupTab';
 import EmployeesTab from '@/components/hr/EmployeesTab';
 import PayrollTab from '@/components/hr/PayrollTab';
 import LeaveTab from '@/components/hr/LeaveTab';
@@ -54,7 +59,8 @@ export default function BusinessDetailPage() {
   const [profit, setProfit] = useState<ProfitCalculation | null>(null);
   const [version, setVersion] = useState(0);
 
-  const { section, subTab: activeSubTab } = resolveSection(sectionParam, subTabParam);
+  const caps = useCapabilities(business);
+  const { section, subTab: activeSubTab } = resolveSectionFor(caps, sectionParam, subTabParam);
 
   useEffect(() => {
     if (!id) return;
@@ -64,13 +70,16 @@ export default function BusinessDetailPage() {
 
   // Keep the URL in sync with the resolved (possibly corrected) section/subtab —
   // e.g. an invalid or missing param redirects to a valid one.
+  // Wait for the business to load before correcting the URL — capabilities
+  // depend on its type, and redirecting on the default preset would bounce a
+  // service business out of a section it's actually allowed to see.
   useEffect(() => {
-    if (!id) return;
+    if (!id || !business) return;
     if (sectionParam !== section) { navigate(`/businesses/${id}/${section}`, { replace: true }); return; }
     if (section !== 'overview' && subTabParam !== activeSubTab) {
       navigate(`/businesses/${id}/${section}/${activeSubTab}`, { replace: true });
     }
-  }, [id, section, sectionParam, activeSubTab, subTabParam, navigate]);
+  }, [id, business, section, sectionParam, activeSubTab, subTabParam, navigate]);
 
   useEffect(() => {
     if (!business) return;
@@ -102,6 +111,10 @@ export default function BusinessDetailPage() {
       {section === 'finance' && activeSubTab === 'profitability' && <ProfitabilityTab business={business} start={start} end={end} />}
       {section === 'finance' && activeSubTab === 'payables' && <PayablesTab business={business} />}
 
+      {section === 'projects' && activeSubTab === 'active' && <ProjectsTab business={business} />}
+      {section === 'projects' && activeSubTab === 'time' && <TimeBillingTab business={business} />}
+      {section === 'projects' && activeSubTab === 'rates' && <RateCardsTab business={business} />}
+
       {section === 'inventory' && activeSubTab === 'products' && <ProductsTab business={business} />}
       {section === 'inventory' && activeSubTab === 'unit-economics' && <UnitEconomicsTab business={business} start={start} end={end} />}
       {section === 'inventory' && activeSubTab === 'manufacturing' && <ManufacturingTab business={business} />}
@@ -124,6 +137,7 @@ export default function BusinessDetailPage() {
       {section === 'hr' && activeSubTab === 'payroll' && <PayrollTab business={business} />}
       {section === 'hr' && activeSubTab === 'leave' && <LeaveTab business={business} />}
 
+      {section === 'setup' && activeSubTab === 'workspace' && <WorkspaceSetupTab business={business} />}
       {section === 'setup' && activeSubTab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}
       {section === 'setup' && activeSubTab === 'audit-log' && <AuditLogTab business={business} />}
     </div>

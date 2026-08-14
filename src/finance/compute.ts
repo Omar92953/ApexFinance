@@ -3,7 +3,10 @@ import type { Business, AdditionalCostRow } from '@/services/db';
 import {
   metricsApi, productsApi, shippingApi, costRulesApi, capitalApi,
   customerInvoicesApi, supplierBillsApi, dealsApi, contactsApi, costBudgetsApi, signalsApi,
+  projectsApi, timeEntriesApi, rateCardsApi,
 } from '@/services/db';
+import { resolveCapabilities, type Capabilities } from '@/config/businessTypes';
+import { computeProjectEconomics, computeUnbilledValue } from './projects';
 import { supabase } from '@/lib/supabase';
 import { computeLtvPredictions, type OrderRow } from './ltv-engine';
 import { computeCostRules, dateOverlapDays, type CostRuleBreakdown, type CostRuleContext, type CostCategory } from './cost-rules';
@@ -13,7 +16,7 @@ import {
 } from './forecast';
 import { computeAvgDailyUnits, classifyStockHealth } from './stock-health';
 import { computeReorderQty } from './reorder';
-import { buildSignals, type Signal } from './signals';
+import { buildSignals, type Signal, type ProjectLike } from './signals';
 
 const REORDER_WINDOW_DAYS = 30;
 const REORDER_TARGET_COVER_DAYS = 30;
@@ -338,24 +341,62 @@ export async function computeCashFlowForecastForBusiness(business: Business, wee
   return computeCashFlowForecast({ today, startingBalance, flows, weeks });
 }
 
+// Rolls each active project's logged time into the cost/unbilled figures the
+// signal engine needs, resolving rates from the rate card on each entry.
+async function collectProjectEconomics(businessId: string): Promise<ProjectLike[]> {
+  const [projects, entries, rates] = await Promise.all([
+    projectsApi.list(businessId),
+    timeEntriesApi.list(businessId),
+    rateCardsApi.list(businessId),
+  ]);
+  const rateById = new Map(rates.map((r) => [r.id, r]));
+
+  return projects.map((p) => {
+    const mine = entries.filter((e) => e.project_id === p.id).map((e) => {
+      const rc = e.rate_card_id ? rateById.get(e.rate_card_id) : undefined;
+      return {
+        hours: Number(e.hours) || 0,
+        is_billable: e.is_billable,
+        billRate: Number(rc?.hourly_rate) || 0,
+        costRate: Number(rc?.cost_rate) || 0,
+        invoiced_on: e.invoiced_on,
+      };
+    });
+    const econ = computeProjectEconomics(mine);
+    return {
+      id: p.id,
+      name: p.name,
+      billingType: p.billing_type,
+      status: p.status,
+      budgetAmount: Number(p.budget_amount) || 0,
+      laborCost: econ.laborCost,
+      unbilledValue: computeUnbilledValue(mine),
+    };
+  });
+}
+
 // Gathers live state from every module, runs the Signal Engine, and filters out
 // anything the user has dismissed or snoozed. This is the single function the
 // Command dashboard (and anything else wanting "what needs attention") calls.
 export async function collectSignalsForBusiness(business: Business): Promise<Signal[]> {
   const today = new Date().toISOString().slice(0, 10);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const caps = resolveCapabilities(business.business_type, business.capabilities as Partial<Capabilities> | null);
 
-  const [invoices, bills, variants, unitsBySku, deals, contacts, budgets, rules, forecast, dismissals] = await Promise.all([
+  // Only query what this business type actually has — an agency has no stock
+  // table worth reading, a shop has no projects.
+  const [invoices, bills, variants, unitsBySku, deals, contacts, budgets, rules, forecast, dismissals, projectRows] = await Promise.all([
     customerInvoicesApi.list(business.id).catch(() => []),
     supplierBillsApi.list(business.id).catch(() => []),
-    productsApi.listVariants(business.id).catch(() => []),
-    productsApi.unitsSoldBySku(business.id, REORDER_WINDOW_DAYS).catch(() => ({} as Record<string, number>)),
+    caps.inventory ? productsApi.listVariants(business.id).catch(() => []) : Promise.resolve([]),
+    caps.inventory ? productsApi.unitsSoldBySku(business.id, REORDER_WINDOW_DAYS).catch(() => ({} as Record<string, number>)) : Promise.resolve({} as Record<string, number>),
     dealsApi.list(business.id).catch(() => []),
     contactsApi.list(business.id).catch(() => []),
     costBudgetsApi.list(business.id, monthStart.slice(0, 7)).catch(() => []),
     costRulesApi.list(business.id).catch(() => []),
     computeCashFlowForecastForBusiness(business).catch(() => []),
     signalsApi.listDismissals(business.id).catch(() => []),
+    caps.projects ? collectProjectEconomics(business.id).catch(() => []) : Promise.resolve([]),
   ]);
 
   // Actual spend per category this month, so budget signals compare like for like.
@@ -367,6 +408,8 @@ export async function collectSignalsForBusiness(business: Business): Promise<Sig
 
   const signals = buildSignals({
     today,
+    enabled: { inventory: caps.inventory, cod: caps.cod, projects: caps.projects },
+    projects: projectRows,
     invoices,
     bills,
     variants: variants.map((v) => ({

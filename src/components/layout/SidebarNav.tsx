@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useMatch, useNavigate } from 'react-router-dom';
 import { ChevronRight, Settings, LogOut } from 'lucide-react';
-import { SECTIONS, SUB_TABS, DEFAULT_SUB_TAB, type SectionKey } from '@/config/businessSections';
+import { visibleSections, visibleSubTabs, sectionLabel, DEFAULT_SUB_TAB, type SectionKey } from '@/config/businessSections';
 import { useAuthStore } from '@/stores/authStore';
 import { useBusinessStore } from '@/stores/businessStore';
+import { useCapabilities } from '@/hooks/useCapabilities';
 import { cn } from '@/lib/utils';
 
 // The nav body shared by the desktop Sidebar (fixed aside) and the mobile
@@ -23,6 +24,11 @@ export default function SidebarNav({ onNavigate }: { onNavigate?: () => void }) 
   const currentSection = routeId ? (params?.section as SectionKey | undefined) : undefined;
   const currentSubTab = routeId ? matchWithSub?.params.subTab : undefined;
 
+  // Sections are gated by what this business actually does — an agency has no
+  // Inventory, a shop has no Projects.
+  const caps = useCapabilities(businesses.find((b) => b.id === currentId));
+  const sections = visibleSections(caps);
+
   const [expanded, setExpanded] = useState<SectionKey | null>(currentSection ?? null);
   useEffect(() => { if (currentSection) setExpanded(currentSection); }, [currentSection]);
 
@@ -33,7 +39,15 @@ export default function SidebarNav({ onNavigate }: { onNavigate?: () => void }) 
       return;
     }
     setExpanded(key);
-    navigate(key === 'overview' ? `/businesses/${currentId}/overview` : `/businesses/${currentId}/${key}/${DEFAULT_SUB_TAB[key]}`);
+    if (key === 'overview') {
+      navigate(`/businesses/${currentId}/overview`);
+    } else {
+      const subs = visibleSubTabs(key as Exclude<SectionKey, 'overview'>, caps);
+      const preferred = DEFAULT_SUB_TAB[key as Exclude<SectionKey, 'overview'>];
+      const target = subs.some((t) => t.key === preferred) ? preferred : subs[0]?.key;
+      if (!target) return;
+      navigate(`/businesses/${currentId}/${key}/${target}`);
+    }
     onNavigate?.();
   };
 
@@ -46,7 +60,7 @@ export default function SidebarNav({ onNavigate }: { onNavigate?: () => void }) 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <nav className={cn('space-y-0.5 p-3', !currentId && 'pointer-events-none opacity-40')}>
-        {SECTIONS.map(({ key, label, icon: Icon }) => (
+        {sections.map(({ key, icon: Icon }) => (
           <div key={key}>
             <button
               onClick={() => goSection(key)}
@@ -56,14 +70,14 @@ export default function SidebarNav({ onNavigate }: { onNavigate?: () => void }) 
               )}
             >
               <Icon className="h-[18px] w-[18px] shrink-0" />
-              <span className="flex-1 text-left">{label}</span>
+              <span className="flex-1 text-left">{sectionLabel(key, caps)}</span>
               {key !== 'overview' && (
                 <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', expanded === key && 'rotate-90')} />
               )}
             </button>
             {key !== 'overview' && expanded === key && (
               <div className="ml-[27px] mt-0.5 space-y-0.5 border-l border-border pl-3">
-                {SUB_TABS[key].map((t) => (
+                {visibleSubTabs(key, caps).map((t) => (
                   <button
                     key={t.key}
                     onClick={() => goSubTab(key, t.key)}

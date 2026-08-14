@@ -5,10 +5,12 @@ import KpiCard from '@/components/shared/KpiCard';
 import CommandCenterStrip from '@/components/shared/CommandCenterStrip';
 import SignalFeed from '@/components/command/SignalFeed';
 import MyWorkPanel from '@/components/command/MyWorkPanel';
+import { useCapabilities } from '@/hooks/useCapabilities';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 
 export default function OverviewTab({ profit, business }: { profit: ProfitCalculation | null; business: Business }) {
   const cur = business.currency ?? 'EGP';
+  const caps = useCapabilities(business);
   if (!profit) return <p className="text-muted-foreground">Computing…</p>;
 
   const aov = profit.orders > 0 ? profit.netSales / profit.orders : 0;
@@ -25,16 +27,25 @@ export default function OverviewTab({ profit, business }: { profit: ProfitCalcul
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Net Profit" value={formatCurrency(profit.netProfit, cur)} sub={`${profit.profitMargin.toFixed(1)}% margin`} tone={profit.netProfit >= 0 ? 'positive' : 'negative'} icon={<TrendingUp className="h-4 w-4" />} delay={0} />
         <KpiCard label="Net Revenue" value={formatCurrency(profit.netSales, cur)} sub={`Gross ${formatCurrency(profit.grossSales, cur)}`} icon={<DollarSign className="h-4 w-4" />} delay={40} />
-        <KpiCard label="Total Ad Spend" value={formatCurrency(profit.totalAdSpend, cur)} sub={`Meta ${formatCurrency(profit.metaSpend, cur)}`} icon={<Target className="h-4 w-4" />} delay={80} />
-        <KpiCard label="MER" value={`${mer.toFixed(2)}x`} sub="Gross sales ÷ ad spend" icon={<Gauge className="h-4 w-4" />} delay={120} />
+        {caps.adSpend ? (
+          <>
+            <KpiCard label="Total Ad Spend" value={formatCurrency(profit.totalAdSpend, cur)} sub={`Meta ${formatCurrency(profit.metaSpend, cur)}`} icon={<Target className="h-4 w-4" />} delay={80} />
+            <KpiCard label="MER" value={`${mer.toFixed(2)}x`} sub="Gross sales ÷ ad spend" icon={<Gauge className="h-4 w-4" />} delay={120} />
+          </>
+        ) : (
+          <KpiCard label={caps.projects ? 'Invoiced' : 'Orders'} value={formatNumber(profit.orders)} sub={`Average ${formatCurrency(aov, cur)}`} icon={<ShoppingCart className="h-4 w-4" />} delay={80} />
+        )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="ROAS" value={`${profit.roas.toFixed(2)}x`} sub={`Break-even ${profit.breakevenRoas.toFixed(2)}x`} tone={roasTone} delay={160} />
-        <KpiCard label="Customer Acquisition Cost" value={formatCurrency(profit.cac, cur, true)} sub="Ad spend per customer" delay={200} />
-        <KpiCard label="LTV : CAC" value={`${ltvCac.toFixed(2)}x`} sub={ltvCac >= 3 ? 'Healthy' : 'Below target'} tone={ltvCac >= 3 ? 'positive' : 'warning'} icon={<Users className="h-4 w-4" />} delay={240} />
-        <KpiCard label="Orders / AOV" value={formatNumber(profit.orders)} sub={`AOV ${formatCurrency(aov, cur)}`} icon={<ShoppingCart className="h-4 w-4" />} delay={280} />
-      </div>
+      {/* ROAS, CAC and LTV:CAC only mean something when the business buys traffic. */}
+      {caps.adSpend && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard label="ROAS" value={`${profit.roas.toFixed(2)}x`} sub={`Break-even ${profit.breakevenRoas.toFixed(2)}x`} tone={roasTone} delay={160} />
+          <KpiCard label="Customer Acquisition Cost" value={formatCurrency(profit.cac, cur, true)} sub="Ad spend per customer" delay={200} />
+          <KpiCard label="LTV : CAC" value={`${ltvCac.toFixed(2)}x`} sub={ltvCac >= 3 ? 'Healthy' : 'Below target'} tone={ltvCac >= 3 ? 'positive' : 'warning'} icon={<Users className="h-4 w-4" />} delay={240} />
+          <KpiCard label="Orders / AOV" value={formatNumber(profit.orders)} sub={`AOV ${formatCurrency(aov, cur)}`} icon={<ShoppingCart className="h-4 w-4" />} delay={280} />
+        </div>
+      )}
 
       <div className="rounded-xl border border-border bg-card p-5">
         <h3 className="text-sm font-semibold mb-3">Profit waterfall</h3>

@@ -102,6 +102,16 @@ export interface ForecastWeekLike {
   balance: number;
 }
 
+export interface ProjectLike {
+  id: string;
+  name: string;
+  billingType: 'fixed' | 'hourly' | 'retainer';
+  status: string;
+  budgetAmount: number;
+  laborCost: number;
+  unbilledValue: number;
+}
+
 export interface SignalInputs {
   today: string;
   invoices?: InvoiceLike[];
@@ -111,14 +121,18 @@ export interface SignalInputs {
   contacts?: ContactLike[];
   budgets?: BudgetLike[];
   forecast?: ForecastWeekLike[];
+  projects?: ProjectLike[];
   cashFloor?: number;
+  // Which providers to run. A service business has no stock to be low on and
+  // no couriers to chase; a shop has no projects. Omitted = everything on.
+  enabled?: { inventory?: boolean; cod?: boolean; projects?: boolean };
 }
 
 const outstanding = (x: { amount: number; amount_paid: number }) => (Number(x.amount) || 0) - (Number(x.amount_paid) || 0);
 
 // --- Providers: one per domain, each independently testable ---
 
-export function receivableSignals(invoices: InvoiceLike[], today: string): Signal[] {
+export function receivableSignals(invoices: InvoiceLike[], today: string, codEnabled = true): Signal[] {
   const out: Signal[] = [];
   for (const i of invoices) {
     if (i.status === 'paid') continue;
@@ -126,7 +140,7 @@ export function receivableSignals(invoices: InvoiceLike[], today: string): Signa
     if (balance <= 0) continue;
     const label = i.invoice_number || `Invoice ${i.id.slice(0, 8)}`;
 
-    if (i.payment_method === 'cod') {
+    if (i.payment_method === 'cod' && codEnabled) {
       const age = daysBetween(i.invoice_date, today);
       if (age > COD_OUTSTANDING_DAYS) {
         out.push({
@@ -336,13 +350,54 @@ export function followUpSignals(contacts: ContactLike[], today: string): Signal[
     });
 }
 
+// Service-business equivalents of the stock signals: work that has eaten its
+// fee, and delivered work nobody has invoiced yet.
+export const UNBILLED_ALERT_EGP = 5_000;
+
+export function projectSignals(projects: ProjectLike[]): Signal[] {
+  const out: Signal[] = [];
+  for (const p of projects) {
+    if (p.status !== 'active') continue;
+
+    if (p.budgetAmount > 0 && p.billingType !== 'hourly' && p.laborCost > p.budgetAmount) {
+      out.push({
+        id: `project-over-budget:${p.id}`,
+        severity: 'critical',
+        domain: 'sales',
+        title: `"${p.name}" has burned through its fee`,
+        why: `Labour cost is ${p.laborCost.toFixed(0)} EGP against a ${p.budgetAmount.toFixed(0)} EGP budget.`,
+        impactEgp: p.laborCost - p.budgetAmount,
+        suggestedAction: 'Stop unbilled work, renegotiate scope, or raise a change order.',
+        entity: { type: 'project', id: p.id },
+      });
+    }
+
+    if (p.unbilledValue >= UNBILLED_ALERT_EGP) {
+      out.push({
+        id: `project-unbilled:${p.id}`,
+        severity: 'warning',
+        domain: 'receivables',
+        title: `"${p.name}" has ${p.unbilledValue.toFixed(0)} EGP of unbilled work`,
+        why: 'Billable hours have been delivered but never invoiced.',
+        impactEgp: p.unbilledValue,
+        suggestedAction: 'Raise an invoice for the delivered work.',
+        entity: { type: 'project', id: p.id },
+      });
+    }
+  }
+  return out;
+}
+
 // --- The single entry point every consumer uses ---
 export function buildSignals(inputs: SignalInputs): Signal[] {
   const { today } = inputs;
+  const on = { inventory: true, cod: true, projects: true, ...(inputs.enabled ?? {}) };
+
   const all = [
-    ...receivableSignals(inputs.invoices ?? [], today),
+    ...receivableSignals(inputs.invoices ?? [], today, on.cod),
     ...payableSignals(inputs.bills ?? [], today),
-    ...inventorySignals(inputs.variants ?? []),
+    ...(on.inventory ? inventorySignals(inputs.variants ?? []) : []),
+    ...(on.projects ? projectSignals(inputs.projects ?? []) : []),
     ...cashSignals(inputs.forecast ?? [], inputs.cashFloor),
     ...budgetSignals(inputs.budgets ?? []),
     ...pipelineSignals(inputs.deals ?? [], today),

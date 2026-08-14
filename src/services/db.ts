@@ -13,6 +13,10 @@ export interface Business {
   id: string;
   user_id?: string;
   name: string;
+  // What kind of business this workspace is — decides which sections, KPIs and
+  // signals exist. `capabilities` overrides individual flags on the preset.
+  business_type?: string;
+  capabilities?: Record<string, boolean> | null;
   logo?: string | null;
   group_name?: string | null;
   sort_order?: number;
@@ -1738,6 +1742,106 @@ export const leaveApi = {
   },
   async remove(id: string): Promise<void> {
     const { error } = await supabase.from('leave_records').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Projects, rate cards & billable time (service businesses) ----------
+export interface RateCard {
+  id: string;
+  business_id: string;
+  name: string;
+  hourly_rate: number;
+  cost_rate: number;
+  is_active: boolean;
+}
+
+export interface Project {
+  id: string;
+  business_id: string;
+  contact_id?: string | null;
+  name: string;
+  code?: string | null;
+  billing_type: 'fixed' | 'hourly' | 'retainer';
+  status: 'quoted' | 'active' | 'on_hold' | 'completed' | 'cancelled';
+  budget_amount: number;
+  budget_hours?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  notes?: string | null;
+}
+
+export interface TimeEntry {
+  id: string;
+  business_id: string;
+  project_id: string;
+  employee_id?: string | null;
+  rate_card_id?: string | null;
+  entry_date: string;
+  hours: number;
+  description?: string | null;
+  is_billable: boolean;
+  invoiced_on?: string | null;
+}
+
+export const rateCardsApi = {
+  async list(businessId: string): Promise<RateCard[]> {
+    return unwrap(await supabase.from('rate_cards').select('*').eq('business_id', businessId).order('name')) || [];
+  },
+  async create(r: Partial<RateCard> & { business_id: string; name: string }): Promise<RateCard> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('rate_cards').insert({ ...r, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<RateCard>): Promise<void> {
+    const { error } = await supabase.from('rate_cards').update(patch).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('rate_cards').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const projectsApi = {
+  async list(businessId: string): Promise<Project[]> {
+    return unwrap(await supabase.from('projects').select('*').eq('business_id', businessId).order('created_at', { ascending: false })) || [];
+  },
+  async create(p: Partial<Project> & { business_id: string; name: string }): Promise<Project> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('projects').insert({ ...p, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<Project>): Promise<void> {
+    const { error } = await supabase.from('projects').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const timeEntriesApi = {
+  async list(businessId: string, projectId?: string): Promise<TimeEntry[]> {
+    let q = supabase.from('time_entries').select('*').eq('business_id', businessId);
+    if (projectId) q = q.eq('project_id', projectId);
+    return unwrap(await q.order('entry_date', { ascending: false })) || [];
+  },
+  async create(t: Partial<TimeEntry> & { business_id: string; project_id: string; hours: number }): Promise<TimeEntry> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('time_entries').insert({ ...t, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<TimeEntry>): Promise<void> {
+    const { error } = await supabase.from('time_entries').update(patch).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('time_entries').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Marks a batch of billable entries as invoiced so they stop counting as WIP.
+  async markInvoiced(ids: string[], invoiceId: string): Promise<void> {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from('time_entries').update({ invoiced_on: invoiceId }).in('id', ids);
     if (error) throw error;
   },
 };

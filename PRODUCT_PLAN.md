@@ -5,6 +5,37 @@
 
 ---
 
+## 0. This is not an e-commerce app
+
+**Correction made mid-build:** the app must serve four business types, not one.
+Everything before this was written assuming an online store — stock, couriers, COD,
+ad spend — which quietly made the product useless for three quarters of its audience.
+
+| Type | Sells | Notably has | Notably lacks |
+|---|---|---|---|
+| **E-commerce** | Products online | Stock, COD, couriers, ad spend, Shopify | — |
+| **Retail shop** | Products in person | Stock, purchasing | COD, ads, online sync |
+| **Wholesale / B2B** | Products on credit terms | Stock, POs, invoicing | COD, ads, online sync |
+| **Service / agency** | Projects, retainers, time | Projects, rate cards, billable hours | Stock entirely |
+
+**How it works:** each business picks a type on creation, which resolves to a set of
+**capabilities** (`inventory`, `manufacturing`, `purchasing`, `cod`, `adSpend`,
+`onlineStore`, `projects`). Those gate the sidebar sections, the dashboard KPIs, and
+which signal providers run. Because the app is already per-business, one workspace can
+be a shop while the next is an agency. Presets are a starting point, not a cage —
+Setup → Workspace overrides any individual flag, and only genuine deviations are
+stored so future preset changes still flow through.
+
+**What this changed concretely:** ROAS/MER/CAC/LTV:CAC now only render for ad-spending
+businesses; the COD tab and its signals only exist where COD does; the Inventory
+section renames itself to *Purchasing* when there's no stock to hold; and service
+businesses get a **Projects** section with the revenue model they actually run on —
+fixed-price / hourly / retainer work, rate cards carrying both bill *and* cost rates,
+billable time, and unbilled-WIP tracking. Project margin counts **all** hours as cost,
+billable or not, which is the trap that quietly kills agency profitability.
+
+---
+
 ## 1. The core diagnosis
 
 The app has impressive **breadth** — 10 ERP phases shipped, 56 UI components, a real
@@ -62,6 +93,7 @@ converts the existing data into usefulness, and layers 3 and 4 depend on it.
 | 8 | **Budget allocation** | Monthly budget per cost category | No top-down allocation, no commitments, no reforecast, no approval gate |
 | 9 | **Operation system** | ❌ Nothing | Build from scratch — this is EOS (see §4) |
 | + | **Governance** | ❌ Nothing | Build from scratch (see §5) |
+| + | **Multi-vertical** | ✅ Built (see §0) | Service businesses still need project→invoice billing wired to AR |
 
 ---
 
