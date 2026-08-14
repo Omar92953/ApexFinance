@@ -611,3 +611,54 @@ for CRM). **Phases 0-3 built:**
   explicitly.
 114 tests passing. `collectSignalsForBusiness()` in `compute.ts` is the single
 gatherer the Command dashboard calls.
+
+#### 25. Multi-vertical support — business types & capabilities (FEATURE / ARCH)
+**Omar: "this isn't for e-commerce businesses only."** Correct, and the whole app
+had been built on the opposite assumption — stock, couriers, COD, ad spend,
+Shopify. Four verticals are now supported: **ecommerce, retail, wholesale,
+service/agency**.
+
+**Architecture.** `src/config/businessTypes.ts` defines a `Capabilities` set
+(`inventory`, `manufacturing`, `purchasing`, `cod`, `adSpend`, `onlineStore`,
+`projects`) and a preset per type. `businesses.business_type` + a
+`capabilities` jsonb of **overrides only** (not the full set — so future preset
+changes still flow through to businesses that never deviated). Unknown/missing
+type resolves to `ecommerce`, which is exactly what every pre-existing business
+was, so the migration needed no backfill beyond a column default.
+`useCapabilities(business)` is the single read path.
+
+**What capabilities gate:**
+- **Sidebar** — `visibleSections`/`visibleSubTabs` in `businessSections.ts`. A
+  section renders only if at least one of its sub-tabs survives gating, so an
+  agency never sees an empty Inventory shell. `sectionLabel()` renames
+  *Inventory* → *Purchasing* when a business buys but holds no stock.
+- **Routing** — `resolveSectionFor(caps, …)` replaced `resolveSection()`. It
+  falls back to the first **visible** sub-tab (not the hardcoded default), so a
+  deep link into a disabled area lands somewhere real. **Gotcha:** the URL-
+  correcting effect in `BusinessDetailPage` must wait for `business` to load —
+  capabilities depend on its type, and redirecting on the default preset would
+  bounce a service business out of a section it's allowed to see.
+- **KPIs** — ROAS / MER / CAC / LTV:CAC only render when `caps.adSpend`. They're
+  meaningless for a business that doesn't buy traffic.
+- **Signals** — `buildSignals({ enabled })` gates the inventory and COD
+  providers; `collectSignalsForBusiness` also **skips the underlying queries**
+  for disabled capabilities rather than fetching and discarding.
+
+**Projects module** (`src/finance/projects.ts`, 15 tests) — the service-business
+revenue model, the real gap. `projects` (fixed / hourly / retainer),
+`rate_cards` carrying **both** a bill rate and a cost rate, and `time_entries`
+with a billable flag and an `invoiced_on` pointer. Key modelling decision:
+**`computeProjectEconomics` charges labour cost for ALL logged hours, billable
+or not** — that's the trap that quietly kills agency profitability, and it's
+tested explicitly. `classifyProjectHealth` judges fixed/retainer work on
+cost-vs-fee but hourly work on its hours cap, since hourly work can't go "over
+budget" on money. `computeUnbilledValue` is the service equivalent of stock
+sitting in a warehouse — delivered, billable, never invoiced.
+
+New **Setup → Workspace** tab (`WorkspaceSetupTab.tsx`) changes type and
+overrides individual capabilities. Migration `0021_business_types_projects.sql`.
+146 tests passing.
+
+**Still open for service businesses:** project → invoice billing isn't wired to
+AR yet (`timeEntriesApi.markInvoiced` exists but nothing calls it), so unbilled
+WIP is tracked but can't yet be converted into a customer invoice in one step.
