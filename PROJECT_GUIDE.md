@@ -215,6 +215,10 @@ Full 10-phase plan lives at `C:\Users\omarm\.claude\plans\using-exactly-the-same
 
 Also delivered outside the numbered phases: full **CRM** (contacts/notes/activity/deals/tasks), the original **Capital/Costs/Inventory overhaul** (products, WAC, manufacturing, capital ledger — predates the ERP plan and is what Phase 2/4 built on top of).
 
+> **⚠️ The 10-phase ERP plan above is superseded as the forward roadmap by [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md) (Product Plan v2).** Everything above still stands as *shipped* — v2 adds the depth layers on top (Decide / Operate / Govern). Phases 0-3 of v2 are done; see session records #22-24.
+>
+> **Local Supabase is now the dev backend** — `supabase start` + `.env.local`. The hosted SQL handoff list below is still un-run, but it matters less now: `supabase/migrations/` is the canonical, ordered schema history and rebuilds everything with `supabase db reset`.
+
 **All 10 phases are now code-complete, tested, and deployed to web + desktop.** The only remaining step is Omar running the deferred SQL files in the Supabase SQL editor — nothing below has been run yet. Run them **in this order** (later files reference tables/functions from earlier ones):
 
 1. `supabase/gl_schema.sql` (Phase 4 — chart of accounts, `post_journal_entry`)
@@ -531,3 +535,79 @@ Payables, Receivables (Customer Invoices), and the General Ledger journal
 export buttons. `audit_schema.sql` deferred per the batched-handoff note in
 #17 — **this closes out the 10-phase ERP master plan; see the consolidated
 SQL handoff list below the status table.**
+
+#### 22. Local Supabase dev stack (DEV / INFRA)
+Omar wanted a local DB "for now, Supabase at the end". Installed WSL2 + Docker
+Desktop; **Docker's WSL data lives on `A:\DockerData\wsl`** via a junction from
+`%LOCALAPPDATA%\Docker\wsl` because C: only had ~4GB free (A: has ~300GB) —
+keep future large installs off C:. All 19 existing schema files were copied
+into `supabase/migrations/0001_*.sql … 0019_*.sql` in dependency order so
+`supabase db reset` rebuilds the whole database from scratch. `.env.local`
+(gitignored) points the app at `http://127.0.0.1:54321`; **delete it to switch
+back to hosted Supabase** — `.env` still holds the hosted credentials untouched.
+`0019_local_grants.sql` is **local-only** (hosted Supabase grants anon/
+authenticated automatically) and is NOT part of the hosted handoff.
+**Two real bugs surfaced by going local, both of which would have broken the
+hosted deploy too:** (1) `gl_schema.sql` had `"Owner's Equity"` in double
+quotes — Postgres parses that as a column identifier, not a string literal;
+fixed to `'Owner''s Equity'`. (2) fresh local Postgres needs explicit role
+grants. This is the argument for keeping local-first as the default workflow.
+
+#### 23. Workspace-switcher navigation redesign (FEATURE / UX)
+Businesses now behave like workspaces/profiles rather than rows in a list.
+`BusinessSwitcher` (Popover-based, top-right) handles search/switch/create and
+links to "Manage businesses"; `TitleBar` **now always renders** (it previously
+returned `null` outside Electron, so the web build had no top bar at all) with
+the Electron drag-region and window controls still conditional. The left
+sidebar became an accordion of the 7 business sections plus Settings, extracted
+into `SidebarNav.tsx` and shared by the desktop `Sidebar` and the new
+`MobileSidebarDrawer` (`MobileHeader`/`MobileNav` deleted — 7 sections don't
+fit a bottom tab bar). Section + sub-tab now live in the URL via nested routes
+`/businesses/:id/:section/:subTab`, so a refresh no longer dumps you back on
+Overview. `src/config/businessSections.ts` is the single source of truth for
+SECTIONS/SUB_TABS/DEFAULT_SUB_TAB plus a pure, tested `resolveSection()`.
+`businessStore` gained `lastActiveId` (localStorage) driving `RootRedirect`.
+**Bug found and fixed the same session:** `SidebarNav` required a business
+`:id` and went `pointer-events-none` without one, so Settings and Manage-
+businesses became dead ends with an unusable menu — it now falls back to
+`lastActiveId`.
+
+#### 24. Product Plan v2 — Phases 0-3 (FEATURE / PLAN-V2)
+`PRODUCT_PLAN.md` written after Omar's verdict that the app was "very basic".
+Diagnosis: the app has breadth but no depth — every module is a CRUD table that
+records what happened and never says what to *do*. Plan reframes it as four
+layers (Record ✅ → **Decide** → **Operate** → **Govern**) across 11 phases,
+with reference models named per system (EOS/Traction for the operating system
+and governance, 13-week direct-method TWCF for cash, Zluri/Cledara for the
+subscription auditor, Odoo document chaining for ERP depth, HubSpot timeline
+for CRM). **Phases 0-3 built:**
+- **Phase 1 — Signal Engine** (`src/finance/signals.ts`, 27 tests). Replaces
+  `alerts.ts` (deleted, along with `AlertCenter.tsx`), which only produced
+  counts. Emits `Signal { severity, domain, title, why, impactEgp,
+  suggestedAction, entity }` from providers across receivables, payables,
+  inventory, cash, costs, pipeline and CRM. **Ranking = severity floor +
+  money at stake**, so a big-enough warning outranks a zero-impact critical —
+  tested explicitly. Signal ids are deterministic (`overdue-invoice:<uuid>`)
+  so dismissals and spawned tasks reference them stably across recomputation.
+  Signals are **computed, never stored** — only the human decisions on top
+  (dismissals, tasks) persist, so they cannot go stale.
+- **Phase 2 — Action layer** (`0020_signals_workitems.sql`). `tasks` gained
+  priority/assignee/notes/source_signal_id/entity_type/entity_id/completed_at;
+  new `signal_dismissals` table for snooze/dismiss. A **partial unique index**
+  on `(business_id, source_signal_id) where is_done = false` makes
+  `tasksApi.createFromSignal` idempotent — the 23505 conflict is swallowed
+  rather than thrown, so clicking twice can't double-queue. New
+  `SignalFeed`/`MyWorkPanel` components turn Overview into a **Command**
+  dashboard (section renamed; route key stays `overview` for URL stability).
+- **Phase 3 — Cash flow, direct method** (`forecast.ts` rewritten, 19 tests).
+  The old version extrapolated one blended daily number, so every week was
+  identical and the chart was a straight line. Now it buckets real dated
+  `ScheduledFlow`s week by week — open AR on due dates, COD after the courier
+  lag, supplier bills, recurring costs, forecast sales — with each week's close
+  opening the next. Overdue items **sweep into week 1** rather than falling out
+  of the window. Adds `troughBalance` (the number that actually decides
+  affordability) and `summariseByKind`. Forecast sales use **gross margin**,
+  not net profit, to avoid double-counting the fixed costs already scheduled
+  explicitly.
+114 tests passing. `collectSignalsForBusiness()` in `compute.ts` is the single
+gatherer the Command dashboard calls.
