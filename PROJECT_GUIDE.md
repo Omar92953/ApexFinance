@@ -75,7 +75,7 @@ system, per the master plan.
 > - Dark-first theme, near-black backgrounds, **cobalt-blue primary** (`hsl(221 83% 53%)` light / `hsl(217 91% 60%)` dark).
 > - Tokens live in `src/styles/globals.css` as HSL CSS vars (`--primary`, `--chart-1..5`, etc.) — Tailwind maps them in `tailwind.config.cjs`. Never hardcode hex; use the token.
 > - Radius: `0.75rem` default. Font: Inter, tabular numerals for all money/number displays (`font-variant-numeric: tabular-nums`).
-> - Frameless window with a custom `TitleBar` — only renders when `window.electronAPI` exists (desktop); hidden on web.
+> - Frameless window with a custom `TitleBar`. It **always renders** (it hosts the business switcher on web too); only the drag region and the minimise/maximise/close controls are conditional on `window.electronAPI`.
 
 > [!IMPORTANT]
 > **Coding Standards**
@@ -87,7 +87,7 @@ system, per the master plan.
 
 > [!IMPORTANT]
 > **Mandatory Verification Checklist** — before calling any task done:
-> 1. `npm test` — all vitest suites green (currently **146 tests**; every new pure module adds its own).
+> 1. `npm test` — all vitest suites green (currently **176 tests**; every new pure module adds its own).
 > 2. `npm run build` — `tsc && vite build` clean, no type errors.
 > 3. If UI changed: rebuild the desktop app (`npm run build:electron`) and relaunch it to eyeball the change.
 > 4. Commit + push → confirm the GitHub Actions web deploy run finishes with `success` (don't just push and assume).
