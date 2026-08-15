@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSignals, rankSignals, signalScore, totalAtStake,
   receivableSignals, payableSignals, inventorySignals, cashSignals,
-  budgetSignals, pipelineSignals, followUpSignals,
+  budgetSignals, pipelineSignals, followUpSignals, operateSignals, governSignals,
   type Signal,
 } from './signals';
 
@@ -179,6 +179,67 @@ describe('followUpSignals', () => {
       { id: 'c4', first_name: 'None', follow_up_date: null },
     ], TODAY);
     expect(out.map((s) => s.entity?.id)).toEqual(['c1', 'c2']);
+  });
+});
+
+describe('operateSignals', () => {
+  const TODAY_O = '2026-08-15';
+
+  it('flags an unfinished rock past its due date as overdue', () => {
+    const out = operateSignals([{ id: 'r1', title: 'Launch wholesale', status: 'on_track', due_date: '2026-08-01', quarter: '2026-Q3' }], [], TODAY_O);
+    expect(out[0].id).toBe('rock-overdue:r1');
+    expect(out[0].severity).toBe('warning');
+  });
+
+  it('flags an owner-declared off-track rock even when not yet due', () => {
+    const out = operateSignals([{ id: 'r2', title: 'Hire ops lead', status: 'off_track', due_date: '2026-12-01', quarter: '2026-Q3' }], [], TODAY_O);
+    expect(out[0].id).toBe('rock-off-track:r2');
+  });
+
+  it('stays quiet about done rocks and healthy in-flight ones', () => {
+    const out = operateSignals([
+      { id: 'r3', title: 'Done thing', status: 'done', due_date: '2026-01-01', quarter: '2026-Q1' },
+      { id: 'r4', title: 'Fine', status: 'on_track', due_date: '2026-12-01', quarter: '2026-Q3' },
+    ], [], TODAY_O);
+    expect(out).toEqual([]);
+  });
+
+  it('reports missed scorecard metrics', () => {
+    const out = operateSignals([], [{ metricId: 'm1', name: 'Weekly revenue', target: 10000, value: 6000, owner: 'Omar' }], TODAY_O);
+    expect(out[0].id).toBe('metric-missed:m1');
+    expect(out[0].why).toContain('6000');
+  });
+});
+
+describe('governSignals', () => {
+  const TODAY_G = '2026-08-15';
+
+  it('escalates an overdue obligation to critical', () => {
+    const out = governSignals([{ id: 'c1', title: 'VAT return', due_date: '2026-08-01' }], [], TODAY_G);
+    expect(out[0].severity).toBe('critical');
+    expect(out[0].title).toContain('overdue');
+  });
+
+  it('warns ahead of a deadline inside the lead window', () => {
+    const out = governSignals([{ id: 'c2', title: 'Licence renewal', due_date: '2026-08-20' }], [], TODAY_G);
+    expect(out[0].severity).toBe('warning');
+  });
+
+  it('ignores obligations beyond the lead window or with no date', () => {
+    const out = governSignals([
+      { id: 'c3', title: 'Far away', due_date: '2026-12-01' },
+      { id: 'c4', title: 'Undated' },
+    ], [], TODAY_G);
+    expect(out).toEqual([]);
+  });
+
+  it('nudges documents whose review date has passed', () => {
+    const out = governSignals([], [
+      { id: 'd1', title: 'COD remittance procedure', review_due: '2026-08-01' },
+      { id: 'd2', title: 'Not yet due', review_due: '2026-12-01' },
+    ], TODAY_G);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('doc-review-due:d1');
   });
 });
 

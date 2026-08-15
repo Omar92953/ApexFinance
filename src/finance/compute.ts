@@ -3,8 +3,9 @@ import type { Business, AdditionalCostRow } from '@/services/db';
 import {
   metricsApi, productsApi, shippingApi, costRulesApi, capitalApi,
   customerInvoicesApi, supplierBillsApi, dealsApi, contactsApi, costBudgetsApi, signalsApi,
-  projectsApi, timeEntriesApi, rateCardsApi,
+  projectsApi, timeEntriesApi, rateCardsApi, rocksApi, scorecardApi, governanceApi,
 } from '@/services/db';
+import { weekStart, metricStatus } from './eos';
 import { resolveCapabilities, type Capabilities } from '@/config/businessTypes';
 import { computeProjectEconomics, computeUnbilledValue } from './projects';
 import { supabase } from '@/lib/supabase';
@@ -399,6 +400,31 @@ export async function collectSignalsForBusiness(business: Business): Promise<Sig
     caps.projects ? collectProjectEconomics(business.id).catch(() => []) : Promise.resolve([]),
   ]);
 
+  // Operate + Govern are universal — every business type has a weekly rhythm
+  // and obligations, regardless of what it sells.
+  const [rocks, metrics, scEntries, governDocs] = await Promise.all([
+    rocksApi.list(business.id).catch(() => []),
+    scorecardApi.listMetrics(business.id).catch(() => []),
+    scorecardApi.listEntries(business.id, weekStart(today)).catch(() => []),
+    governanceApi.list(business.id).catch(() => []),
+  ]);
+
+  const thisWeek = weekStart(today);
+  const missedMetrics = metrics
+    .filter((m) => m.is_active)
+    .map((m) => {
+      const entry = scEntries.find((e) => e.metric_id === m.id && e.week_start === thisWeek);
+      return { metric: m, value: entry?.value ?? null };
+    })
+    .filter((x) => metricStatus(x.value, Number(x.metric.target_value) || 0, x.metric.comparator) === 'miss')
+    .map((x) => ({
+      metricId: x.metric.id,
+      name: x.metric.name,
+      target: Number(x.metric.target_value) || 0,
+      value: x.value as number,
+      owner: x.metric.owner,
+    }));
+
   // Actual spend per category this month, so budget signals compare like for like.
   let actualByCategory: Record<string, number> = {};
   try {
@@ -410,6 +436,10 @@ export async function collectSignalsForBusiness(business: Business): Promise<Sig
     today,
     enabled: { inventory: caps.inventory, cod: caps.cod, projects: caps.projects },
     projects: projectRows,
+    rocks,
+    missedMetrics,
+    compliance: governDocs.filter((d) => d.kind === 'compliance' && d.status !== 'archived'),
+    reviewableDocs: governDocs.filter((d) => d.review_due && d.status === 'active'),
     invoices,
     bills,
     variants: variants.map((v) => ({

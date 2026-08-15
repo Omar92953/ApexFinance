@@ -3,6 +3,7 @@
 // BusinessDetailPage's routing/validation, so the two can never drift.
 import {
   LayoutDashboard, Wallet, Package, ShoppingCart, Users, UserCog, Settings2, Briefcase,
+  Compass, BookOpen, FileBarChart,
   type LucideIcon,
 } from 'lucide-react';
 import type { Capabilities } from './businessTypes';
@@ -15,6 +16,9 @@ export const SECTIONS = [
   { key: 'sales', label: 'Sales', icon: ShoppingCart },
   { key: 'crm', label: 'CRM', icon: Users },
   { key: 'hr', label: 'HR', icon: UserCog },
+  { key: 'reports', label: 'Reports', icon: FileBarChart },
+  { key: 'operate', label: 'Operate', icon: Compass },
+  { key: 'govern', label: 'Govern', icon: BookOpen },
   { key: 'setup', label: 'Setup', icon: Settings2 },
 ] as const satisfies ReadonlyArray<{ key: string; label: string; icon: LucideIcon }>;
 
@@ -63,6 +67,24 @@ export const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; la
     { key: 'payroll', label: 'Payroll' },
     { key: 'leave', label: 'Leave' },
   ],
+  reports: [
+    { key: 'financial', label: 'Financial' },
+    { key: 'operational', label: 'Operational' },
+  ],
+  operate: [
+    { key: 'scorecard', label: 'Scorecard' },
+    { key: 'rocks', label: 'Rocks' },
+    { key: 'issues', label: 'Issues' },
+  ],
+  govern: [
+    { key: 'handbook', label: 'Handbook' },
+    { key: 'org', label: 'Accountability' },
+    { key: 'policies', label: 'Policies' },
+    { key: 'registers', label: 'Vendors & Systems' },
+    { key: 'decisions', label: 'Decisions' },
+    { key: 'kpis', label: 'KPI Dictionary' },
+    { key: 'compliance', label: 'Compliance' },
+  ],
   setup: [
     { key: 'workspace', label: 'Workspace' },
     { key: 'integrations', label: 'Integrations' },
@@ -77,6 +99,9 @@ export const DEFAULT_SUB_TAB: Record<Exclude<SectionKey, 'overview'>, string> = 
   sales: 'orders',
   crm: 'customers',
   hr: 'employees',
+  reports: 'financial',
+  operate: 'scorecard',
+  govern: 'handbook',
   setup: 'workspace',
 };
 

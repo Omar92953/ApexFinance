@@ -9,7 +9,7 @@
 // every rule below is directly testable.
 
 export type SignalSeverity = 'critical' | 'warning' | 'info';
-export type SignalDomain = 'cash' | 'receivables' | 'payables' | 'inventory' | 'sales' | 'crm' | 'costs';
+export type SignalDomain = 'cash' | 'receivables' | 'payables' | 'inventory' | 'sales' | 'crm' | 'costs' | 'operate' | 'govern';
 
 export interface Signal {
   id: string;                 // deterministic — dismissals/tasks reference it stably
@@ -122,6 +122,10 @@ export interface SignalInputs {
   budgets?: BudgetLike[];
   forecast?: ForecastWeekLike[];
   projects?: ProjectLike[];
+  rocks?: RockLike[];
+  missedMetrics?: MissedMetricLike[];
+  compliance?: ComplianceLike[];
+  reviewableDocs?: ReviewableDocLike[];
   cashFloor?: number;
   // Which providers to run. A service business has no stock to be low on and
   // no couriers to chase; a shop has no projects. Omitted = everything on.
@@ -388,6 +392,108 @@ export function projectSignals(projects: ProjectLike[]): Signal[] {
   return out;
 }
 
+// --- Operate & Govern: the weekly rhythm and the operating manual ---
+export interface RockLike {
+  id: string;
+  title: string;
+  status: string;
+  due_date?: string | null;
+  quarter: string;
+}
+export interface MissedMetricLike {
+  metricId: string;
+  name: string;
+  target: number;
+  value: number;
+  owner?: string | null;
+}
+export interface ComplianceLike {
+  id: string;
+  title: string;
+  due_date?: string | null;
+  owner?: string | null;
+}
+export interface ReviewableDocLike {
+  id: string;
+  title: string;
+  review_due?: string | null;
+}
+
+export const COMPLIANCE_LEAD_DAYS = 14;
+
+export function operateSignals(rocks: RockLike[], missed: MissedMetricLike[], today: string): Signal[] {
+  const out: Signal[] = [];
+
+  for (const r of rocks) {
+    if (r.status === 'done') continue;
+    const overdue = r.due_date && r.due_date < today;
+    if (!overdue && r.status !== 'off_track') continue;
+    out.push({
+      id: `rock-${overdue ? 'overdue' : 'off-track'}:${r.id}`,
+      severity: overdue ? 'warning' : 'info',
+      domain: 'operate',
+      title: `Rock "${r.title}" is ${overdue ? 'overdue' : 'off track'}`,
+      why: overdue ? `Was due ${r.due_date} and still isn't done.` : `Owner flagged it off track this quarter (${r.quarter}).`,
+      impactEgp: 0,
+      suggestedAction: 'Decide this week: re-plan it, resource it, or drop it.',
+      entity: { type: 'rock', id: r.id },
+    });
+  }
+
+  for (const m of missed) {
+    out.push({
+      id: `metric-missed:${m.metricId}`,
+      severity: 'info',
+      domain: 'operate',
+      title: `${m.name} missed target this week`,
+      why: `${m.value} against a target of ${m.target}${m.owner ? ` — owned by ${m.owner}` : ''}.`,
+      impactEgp: 0,
+      suggestedAction: 'Raise it as an issue if it misses two weeks running.',
+      entity: { type: 'scorecard_metric', id: m.metricId },
+    });
+  }
+
+  return out;
+}
+
+export function governSignals(compliance: ComplianceLike[], reviewable: ReviewableDocLike[], today: string): Signal[] {
+  const out: Signal[] = [];
+  const horizon = new Date(new Date(today).getTime() + COMPLIANCE_LEAD_DAYS * 86_400_000).toISOString().slice(0, 10);
+
+  for (const c of compliance) {
+    if (!c.due_date || c.due_date > horizon) continue;
+    const overdue = c.due_date < today;
+    out.push({
+      id: `compliance-due:${c.id}`,
+      severity: overdue ? 'critical' : 'warning',
+      domain: 'govern',
+      title: `${c.title} ${overdue ? 'is overdue' : `is due ${c.due_date}`}`,
+      why: overdue
+        ? `Deadline passed on ${c.due_date}${c.owner ? ` — ${c.owner} owns it` : ''}.`
+        : `Falls due within ${COMPLIANCE_LEAD_DAYS} days${c.owner ? ` — ${c.owner} owns it` : ''}.`,
+      impactEgp: 0,
+      suggestedAction: overdue ? 'File it now — penalties usually accrue daily.' : 'Schedule it before the deadline.',
+      entity: { type: 'governance_doc', id: c.id },
+    });
+  }
+
+  for (const d of reviewable) {
+    if (!d.review_due || d.review_due > today) continue;
+    out.push({
+      id: `doc-review-due:${d.id}`,
+      severity: 'info',
+      domain: 'govern',
+      title: `"${d.title}" is due for review`,
+      why: `Was marked for review on ${d.review_due}. Out-of-date procedures quietly stop being followed.`,
+      impactEgp: 0,
+      suggestedAction: 'Re-read it, update it, and push the review date out.',
+      entity: { type: 'governance_doc', id: d.id },
+    });
+  }
+
+  return out;
+}
+
 // --- The single entry point every consumer uses ---
 export function buildSignals(inputs: SignalInputs): Signal[] {
   const { today } = inputs;
@@ -402,6 +508,8 @@ export function buildSignals(inputs: SignalInputs): Signal[] {
     ...budgetSignals(inputs.budgets ?? []),
     ...pipelineSignals(inputs.deals ?? [], today),
     ...followUpSignals(inputs.contacts ?? [], today),
+    ...operateSignals(inputs.rocks ?? [], inputs.missedMetrics ?? [], today),
+    ...governSignals(inputs.compliance ?? [], inputs.reviewableDocs ?? [], today),
   ];
   return rankSignals(all);
 }

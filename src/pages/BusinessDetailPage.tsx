@@ -9,6 +9,13 @@ import { useCapabilities } from '@/hooks/useCapabilities';
 import ProjectsTab from '@/components/projects/ProjectsTab';
 import RateCardsTab from '@/components/projects/RateCardsTab';
 import TimeBillingTab from '@/components/projects/TimeBillingTab';
+import ScorecardTab from '@/components/operate/ScorecardTab';
+import RocksTab from '@/components/operate/RocksTab';
+import IssuesTab from '@/components/operate/IssuesTab';
+import OrgChartTab from '@/components/govern/OrgChartTab';
+import { HandbookTab, PoliciesTab, RegistersTab, DecisionsTab, KpiDictionaryTab, ComplianceTab } from '@/components/govern/GovernSections';
+import FinancialReportsTab from '@/components/reports/FinancialReportsTab';
+import OperationalReportsTab from '@/components/reports/OperationalReportsTab';
 import OverviewTab from '@/components/finance/OverviewTab';
 import DataEntryTab from '@/components/finance/DataEntryTab';
 import CostsTab from '@/components/finance/CostsTab';
@@ -136,6 +143,21 @@ export default function BusinessDetailPage() {
       {section === 'hr' && activeSubTab === 'employees' && <EmployeesTab business={business} />}
       {section === 'hr' && activeSubTab === 'payroll' && <PayrollTab business={business} />}
       {section === 'hr' && activeSubTab === 'leave' && <LeaveTab business={business} />}
+
+      {section === 'reports' && activeSubTab === 'financial' && <FinancialReportsTab business={business} start={start} end={end} />}
+      {section === 'reports' && activeSubTab === 'operational' && <OperationalReportsTab business={business} />}
+
+      {section === 'operate' && activeSubTab === 'scorecard' && <ScorecardTab business={business} />}
+      {section === 'operate' && activeSubTab === 'rocks' && <RocksTab business={business} />}
+      {section === 'operate' && activeSubTab === 'issues' && <IssuesTab business={business} />}
+
+      {section === 'govern' && activeSubTab === 'handbook' && <HandbookTab business={business} />}
+      {section === 'govern' && activeSubTab === 'org' && <OrgChartTab business={business} />}
+      {section === 'govern' && activeSubTab === 'policies' && <PoliciesTab business={business} />}
+      {section === 'govern' && activeSubTab === 'registers' && <RegistersTab business={business} />}
+      {section === 'govern' && activeSubTab === 'decisions' && <DecisionsTab business={business} />}
+      {section === 'govern' && activeSubTab === 'kpis' && <KpiDictionaryTab business={business} />}
+      {section === 'govern' && activeSubTab === 'compliance' && <ComplianceTab business={business} />}
 
       {section === 'setup' && activeSubTab === 'workspace' && <WorkspaceSetupTab business={business} />}
       {section === 'setup' && activeSubTab === 'integrations' && <IntegrationsTab business={business} onChanged={refresh} />}

@@ -1846,6 +1846,187 @@ export const timeEntriesApi = {
   },
 };
 
+// ---------- Operate: scorecard, rocks, issues, meetings (EOS) ----------
+export interface ScorecardMetric {
+  id: string;
+  business_id: string;
+  name: string;
+  owner?: string | null;
+  target_value: number;
+  comparator: 'gte' | 'lte';
+  unit?: string | null;
+  sort_order?: number;
+  is_active: boolean;
+}
+
+export interface ScorecardEntry {
+  id: string;
+  metric_id: string;
+  week_start: string;
+  value: number | null;
+}
+
+export interface Rock {
+  id: string;
+  business_id: string;
+  title: string;
+  owner?: string | null;
+  quarter: string;
+  status: 'on_track' | 'off_track' | 'done';
+  due_date?: string | null;
+  notes?: string | null;
+}
+
+export interface Issue {
+  id: string;
+  business_id: string;
+  title: string;
+  description?: string | null;
+  priority: 'low' | 'normal' | 'high';
+  status: 'open' | 'discussing' | 'solved';
+  raised_by?: string | null;
+  resolution?: string | null;
+  solved_at?: string | null;
+  created_at: string;
+}
+
+export interface Meeting {
+  id: string;
+  business_id: string;
+  meeting_date: string;
+  attendees?: string | null;
+  notes?: string | null;
+  rating?: number | null;
+}
+
+export const scorecardApi = {
+  async listMetrics(businessId: string): Promise<ScorecardMetric[]> {
+    return unwrap(await supabase.from('scorecard_metrics').select('*').eq('business_id', businessId)
+      .order('sort_order').order('created_at')) || [];
+  },
+  async listEntries(businessId: string, sinceWeek?: string): Promise<ScorecardEntry[]> {
+    let q = supabase.from('scorecard_entries').select('*').eq('business_id', businessId);
+    if (sinceWeek) q = q.gte('week_start', sinceWeek);
+    return unwrap(await q) || [];
+  },
+  async createMetric(m: Partial<ScorecardMetric> & { business_id: string; name: string }): Promise<ScorecardMetric> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('scorecard_metrics').insert({ ...m, user_id }).select().single());
+  },
+  async updateMetric(id: string, patch: Partial<ScorecardMetric>): Promise<void> {
+    const { error } = await supabase.from('scorecard_metrics').update(patch).eq('id', id);
+    if (error) throw error;
+  },
+  async removeMetric(id: string): Promise<void> {
+    const { error } = await supabase.from('scorecard_metrics').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // One number per metric per week — upsert so re-entering a week corrects it.
+  async setEntry(businessId: string, metricId: string, weekStart: string, value: number | null): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('scorecard_entries').upsert(
+      { user_id, business_id: businessId, metric_id: metricId, week_start: weekStart, value },
+      { onConflict: 'metric_id,week_start' },
+    );
+    if (error) throw error;
+  },
+};
+
+export const rocksApi = {
+  async list(businessId: string, quarter?: string): Promise<Rock[]> {
+    let q = supabase.from('rocks').select('*').eq('business_id', businessId);
+    if (quarter) q = q.eq('quarter', quarter);
+    return unwrap(await q.order('created_at')) || [];
+  },
+  async create(r: Partial<Rock> & { business_id: string; title: string; quarter: string }): Promise<Rock> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('rocks').insert({ ...r, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<Rock>): Promise<void> {
+    const { error } = await supabase.from('rocks').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('rocks').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const issuesApi = {
+  async list(businessId: string): Promise<Issue[]> {
+    return unwrap(await supabase.from('issues').select('*').eq('business_id', businessId)
+      .order('status').order('created_at', { ascending: false })) || [];
+  },
+  async create(i: Partial<Issue> & { business_id: string; title: string }): Promise<Issue> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('issues').insert({ ...i, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<Issue>): Promise<void> {
+    const withSolved = patch.status === 'solved' ? { ...patch, solved_at: new Date().toISOString() } : patch;
+    const { error } = await supabase.from('issues').update(withSolved).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('issues').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const meetingsApi = {
+  async list(businessId: string): Promise<Meeting[]> {
+    return unwrap(await supabase.from('meetings').select('*').eq('business_id', businessId)
+      .order('meeting_date', { ascending: false }).limit(50)) || [];
+  },
+  async create(m: Partial<Meeting> & { business_id: string }): Promise<Meeting> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('meetings').insert({ ...m, user_id }).select().single());
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('meetings').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Govern: the operating manual ----------
+export type GovernanceKind = 'profile' | 'role' | 'sop' | 'policy' | 'vendor' | 'system' | 'decision' | 'kpi' | 'compliance';
+
+export interface GovernanceDoc {
+  id: string;
+  business_id: string;
+  kind: GovernanceKind;
+  title: string;
+  body?: string | null;
+  owner?: string | null;
+  parent_id?: string | null;
+  status: 'draft' | 'active' | 'archived';
+  review_due?: string | null;
+  due_date?: string | null;
+  recurrence?: 'monthly' | 'quarterly' | 'annual' | null;
+  meta?: Record<string, unknown> | null;
+  sort_order?: number;
+  updated_at?: string;
+}
+
+export const governanceApi = {
+  async list(businessId: string, kind?: GovernanceKind): Promise<GovernanceDoc[]> {
+    let q = supabase.from('governance_docs').select('*').eq('business_id', businessId);
+    if (kind) q = q.eq('kind', kind);
+    return unwrap(await q.order('sort_order').order('title')) || [];
+  },
+  async create(d: Partial<GovernanceDoc> & { business_id: string; kind: GovernanceKind; title: string }): Promise<GovernanceDoc> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('governance_docs').insert({ ...d, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<GovernanceDoc>): Promise<void> {
+    const { error } = await supabase.from('governance_docs').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('governance_docs').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {
