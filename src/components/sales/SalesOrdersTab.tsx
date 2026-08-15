@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, FileText, AlertOctagon } from 'lucide-react';
 import type { Business, Contact, ProductVariant, Product, SalesOrder } from '@/services/db';
-import { contactsApi, productsApi, salesOrdersApi } from '@/services/db';
+import { contactsApi, productsApi, salesOrdersApi, erpApi } from '@/services/db';
+import { useCapabilities } from '@/hooks/useCapabilities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,7 @@ const STATUS_TONE: Record<string, string> = {
 
 export default function SalesOrdersTab({ business }: { business: Business }) {
   const cur = business.currency ?? 'EGP';
+  const caps = useCapabilities(business);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
@@ -49,6 +51,18 @@ export default function SalesOrdersTab({ business }: { business: Business }) {
   const invoiceOrder = async (o: SalesOrder) => { await salesOrdersApi.invoice(business.id, o.id); await load(); };
   const markRto = async (o: SalesOrder) => { if (confirm('Mark as RTO (customer refused delivery)? This cancels the order.')) { await salesOrdersApi.markRto(o.id, true); await load(); } };
 
+  // Holds stock against the order so it can't be sold twice. The RPC refuses
+  // if the free (unreserved) quantity isn't enough, so the error is worth showing.
+  const reserve = async (o: SalesOrder) => {
+    try {
+      const lines = await erpApi.reserveStock(business.id, o.id);
+      await load();
+      alert(`Stock reserved on ${lines} line${lines === 1 ? '' : 's'}.`);
+    } catch (e) {
+      alert(`Could not reserve stock: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -71,6 +85,9 @@ export default function SalesOrdersTab({ business }: { business: Business }) {
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium capitalize', STATUS_TONE[o.status])}>{o.is_rto ? 'RTO' : o.status}</span>
+                {o.status === 'draft' && caps.inventory && (
+                  <Button size="sm" variant="outline" onClick={() => reserve(o)}>Reserve stock</Button>
+                )}
                 {o.status === 'draft' && <Button size="sm" onClick={() => invoiceOrder(o)}>Invoice</Button>}
                 {o.payment_method === 'cod' && !o.is_rto && o.status !== 'cancelled' && (
                   <Button size="sm" variant="outline" onClick={() => markRto(o)}><AlertOctagon className="h-3.5 w-3.5 mr-1.5" /> RTO</Button>

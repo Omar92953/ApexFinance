@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Clock, Trash2 } from 'lucide-react';
+import { Plus, Clock, Trash2, FileText } from 'lucide-react';
 import type { Business, Project, TimeEntry, RateCard, Employee } from '@/services/db';
-import { projectsApi, timeEntriesApi, rateCardsApi, employeesApi } from '@/services/db';
+import { projectsApi, timeEntriesApi, rateCardsApi, employeesApi, erpApi } from '@/services/db';
 import { computeUnbilledValue } from '@/finance/projects';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,10 @@ export default function TimeBillingTab({ business }: { business: Business }) {
   const [form, setForm] = useState<Partial<TimeEntry>>({
     entry_date: new Date().toISOString().slice(0, 10), hours: 0, is_billable: true,
   });
+  const [billOpen, setBillOpen] = useState(false);
+  const [billProject, setBillProject] = useState('');
+  const [billDue, setBillDue] = useState('');
+  const [billing, setBilling] = useState(false);
 
   const load = async () => {
     const [p, e, r, emp] = await Promise.all([
@@ -88,9 +92,14 @@ export default function TimeBillingTab({ business }: { business: Business }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Unbilled work is revenue you've already earned — chase it into an invoice.</p>
-        <Button onClick={() => setOpen(true)} disabled={projects.length === 0}><Plus className="h-4 w-4 mr-1.5" /> Log time</Button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Unbilled work is revenue you've already earned — turn it into an invoice.</p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setBillOpen(true)} disabled={unbilledHours === 0}>
+            <FileText className="h-4 w-4 mr-1.5" /> Bill unbilled time
+          </Button>
+          <Button onClick={() => setOpen(true)} disabled={projects.length === 0}><Plus className="h-4 w-4 mr-1.5" /> Log time</Button>
+        </div>
       </div>
 
       {entries.length === 0 ? (
@@ -128,6 +137,55 @@ export default function TimeBillingTab({ business }: { business: Business }) {
           })}
         </div>
       )}
+
+      <Dialog open={billOpen} onOpenChange={setBillOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Bill unbilled time</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Project</Label>
+              <select className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                value={billProject} onChange={(e) => setBillProject(e.target.value)}>
+                <option value="">— select —</option>
+                {projects.map((p) => {
+                  const value = withRates
+                    .filter((x) => x.project_id === p.id && x.is_billable && !x.invoiced_on)
+                    .reduce((s, x) => s + x.hours * x.billRate, 0);
+                  return <option key={p.id} value={p.id} disabled={value <= 0}>
+                    {p.name} — {formatCurrency(value, cur)} unbilled
+                  </option>;
+                })}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment due</Label>
+              <Input type="date" value={billDue} onChange={(e) => setBillDue(e.target.value)} />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Creates a customer invoice for every unbilled billable hour on that project, posts it to the ledger,
+              and marks those entries billed so they can't be invoiced twice.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBillOpen(false)}>Cancel</Button>
+            <Button disabled={!billProject || billing} onClick={async () => {
+              setBilling(true);
+              try {
+                const ids = withRates
+                  .filter((x) => x.project_id === billProject && x.is_billable && !x.invoiced_on)
+                  .map((x) => x.id);
+                const number = await erpApi.nextDocumentNumber(business.id, 'customer_invoice', 'INV');
+                await erpApi.invoiceProjectTime(business.id, billProject, ids, number, billDue || undefined);
+                setBillOpen(false); setBillProject(''); setBillDue('');
+                await load();
+                alert(`Invoice ${number} created.`);
+              } catch (e) {
+                alert(`Could not create the invoice: ${e instanceof Error ? e.message : e}`);
+              } finally { setBilling(false); }
+            }}>{billing ? 'Creating…' : 'Create invoice'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

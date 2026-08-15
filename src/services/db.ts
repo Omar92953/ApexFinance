@@ -2027,6 +2027,171 @@ export const governanceApi = {
   },
 };
 
+// ---------- Collections / dunning (Phase 4) ----------
+export interface DunningEvent {
+  id: string;
+  invoice_id: string;
+  step_key: string;
+  channel: string;
+  message?: string | null;
+  sent_at: string;
+}
+
+export const dunningApi = {
+  async list(businessId: string): Promise<DunningEvent[]> {
+    return unwrap(await supabase.from('dunning_events').select('*').eq('business_id', businessId)
+      .order('sent_at', { ascending: false })) || [];
+  },
+  // Idempotent per (invoice, step) — the unique index means logging the same
+  // rung twice is a no-op rather than an error.
+  async logSent(businessId: string, invoiceId: string, stepKey: string, channel: string, message: string): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('dunning_events')
+      .upsert({ user_id, business_id: businessId, invoice_id: invoiceId, step_key: stepKey, channel, message },
+        { onConflict: 'invoice_id,step_key' });
+    if (error) throw error;
+  },
+  async setPromiseToPay(invoiceId: string, date: string | null): Promise<void> {
+    const { error } = await supabase.from('customer_invoices').update({ promise_to_pay: date }).eq('id', invoiceId);
+    if (error) throw error;
+  },
+  async setDispute(invoiceId: string, inDispute: boolean, reason?: string | null): Promise<void> {
+    const { error } = await supabase.from('customer_invoices')
+      .update({ in_dispute: inDispute, dispute_reason: inDispute ? (reason ?? null) : null }).eq('id', invoiceId);
+    if (error) throw error;
+  },
+};
+
+// ---------- Budget commitments (Phase 7) ----------
+export interface BudgetCommitment {
+  id: string;
+  business_id: string;
+  category: string;
+  amount: number;
+  month: string;
+  source_type?: string | null;
+  source_id?: string | null;
+  description?: string | null;
+  released: boolean;
+}
+
+export const commitmentsApi = {
+  async list(businessId: string, month?: string): Promise<BudgetCommitment[]> {
+    let q = supabase.from('budget_commitments').select('*').eq('business_id', businessId).eq('released', false);
+    if (month) q = q.eq('month', month);
+    return unwrap(await q.order('created_at', { ascending: false })) || [];
+  },
+  async create(c: Omit<BudgetCommitment, 'id' | 'released'> & { business_id: string }): Promise<void> {
+    const user_id = await uid();
+    const { error } = await supabase.from('budget_commitments').insert({ ...c, user_id });
+    if (error) throw error;
+  },
+  async release(id: string): Promise<void> {
+    const { error } = await supabase.from('budget_commitments').update({ released: true }).eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Subscriptions (Phase 8) ----------
+export interface SubscriptionRow {
+  id: string;
+  business_id: string;
+  name: string;
+  vendor?: string | null;
+  category?: string | null;
+  amount: number;
+  cycle: 'monthly' | 'quarterly' | 'annual';
+  renews_on?: string | null;
+  auto_renew: boolean;
+  seats?: number | null;
+  active_seats?: number | null;
+  last_used_on?: string | null;
+  decision: 'keep' | 'renegotiate' | 'cancel' | 'undecided';
+  decided_on?: string | null;
+  decision_note?: string | null;
+  notes?: string | null;
+}
+
+export const subscriptionsApi = {
+  async list(businessId: string): Promise<SubscriptionRow[]> {
+    return unwrap(await supabase.from('subscriptions').select('*').eq('business_id', businessId).order('name')) || [];
+  },
+  async create(s: Partial<SubscriptionRow> & { business_id: string; name: string }): Promise<SubscriptionRow> {
+    const user_id = await uid();
+    return unwrap(await supabase.from('subscriptions').insert({ ...s, user_id }).select().single());
+  },
+  async update(id: string, patch: Partial<SubscriptionRow>): Promise<void> {
+    const { error } = await supabase.from('subscriptions').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+  async decide(id: string, decision: SubscriptionRow['decision'], note?: string): Promise<void> {
+    const { error } = await supabase.from('subscriptions').update({
+      decision, decision_note: note ?? null, decided_on: new Date().toISOString().slice(0, 10),
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+  },
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase.from('subscriptions').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // Seeds the register from recurring fixed-monthly cost rules already in the
+  // system, so the audit starts from what the business actually pays rather
+  // than an empty page.
+  async importFromCostRules(businessId: string): Promise<number> {
+    const [rules, existing] = await Promise.all([costRulesApi.list(businessId), this.list(businessId)]);
+    const known = new Set(existing.map((s) => s.name.toLowerCase().trim()));
+    const candidates = rules.filter((r) =>
+      r.is_active && r.basis === 'fixed_monthly' && !known.has(r.name.toLowerCase().trim()));
+    if (candidates.length === 0) return 0;
+    const user_id = await uid();
+    const { error } = await supabase.from('subscriptions').insert(candidates.map((r) => ({
+      user_id, business_id: businessId, name: r.name, category: r.category,
+      amount: Number(r.value) || 0, cycle: 'monthly', decision: 'undecided',
+    })));
+    if (error) throw error;
+    return candidates.length;
+  },
+};
+
+// ---------- ERP chaining (Phase 10) ----------
+export const erpApi = {
+  // Atomic, gap-free per-business document numbers (PO-0001, INV-0001…).
+  async nextDocumentNumber(businessId: string, docType: string, prefix: string): Promise<string> {
+    const { data, error } = await supabase.rpc('next_document_number', {
+      p_business_id: businessId, p_doc_type: docType, p_prefix: prefix,
+    });
+    if (error) throw error;
+    return data as string;
+  },
+  // Reserves stock so a confirmed order can't be double-sold. Throws if the
+  // free (unreserved) quantity isn't enough.
+  async reserveStock(businessId: string, salesOrderId: string): Promise<number> {
+    const user_id = await uid();
+    const { data, error } = await supabase.rpc('reserve_stock_for_order', {
+      p_business_id: businessId, p_user_id: user_id, p_sales_order_id: salesOrderId,
+    });
+    if (error) throw error;
+    auditApi.log(businessId, 'sales_orders', salesOrderId, 'reserve_stock', { lines: data });
+    return data as number;
+  },
+  async releaseStock(salesOrderId: string): Promise<void> {
+    const { error } = await supabase.rpc('release_stock_for_order', { p_sales_order_id: salesOrderId });
+    if (error) throw error;
+  },
+  // Turns delivered-but-unbilled project hours into a real customer invoice.
+  async invoiceProjectTime(businessId: string, projectId: string, entryIds: string[], invoiceNumber: string, dueDate?: string): Promise<string> {
+    const user_id = await uid();
+    const { data, error } = await supabase.rpc('invoice_project_time', {
+      p_business_id: businessId, p_user_id: user_id, p_project_id: projectId,
+      p_entry_ids: entryIds, p_invoice_number: invoiceNumber, p_due_date: dueDate ?? null,
+    });
+    if (error) throw error;
+    auditApi.log(businessId, 'customer_invoices', data as string, 'invoice_project_time', { projectId, entries: entryIds.length });
+    return data as string;
+  },
+};
+
 // ---------- User settings ----------
 export const settingsApi = {
   async get(): Promise<{ default_currency: string; theme: string; settings: any } | null> {

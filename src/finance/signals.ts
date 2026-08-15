@@ -126,6 +126,8 @@ export interface SignalInputs {
   missedMetrics?: MissedMetricLike[];
   compliance?: ComplianceLike[];
   reviewableDocs?: ReviewableDocLike[];
+  renewals?: RenewalLike[];
+  subscriptionWasteMonthly?: number;
   cashFloor?: number;
   // Which providers to run. A service business has no stock to be low on and
   // no couriers to chase; a shop has no projects. Omitted = everything on.
@@ -494,6 +496,45 @@ export function governSignals(compliance: ComplianceLike[], reviewable: Reviewab
   return out;
 }
 
+// --- Subscriptions: the money that leaves quietly ---
+export interface RenewalLike {
+  id: string;
+  name: string;
+  amount: number;
+  daysUntil: number;
+  needsDecision: boolean;
+  annualCost: number;
+}
+
+export function subscriptionSignals(renewals: RenewalLike[], wasteMonthly: number): Signal[] {
+  const out: Signal[] = renewals
+    .filter((r) => r.needsDecision)
+    .map((r) => ({
+      id: `renewal-undecided:${r.id}`,
+      severity: r.daysUntil <= 7 ? 'warning' as const : 'info' as const,
+      domain: 'costs' as const,
+      title: `${r.name} auto-renews ${r.daysUntil < 0 ? 'and already has' : r.daysUntil === 0 ? 'today' : `in ${r.daysUntil} days`}`,
+      why: `${r.annualCost.toFixed(0)} EGP a year, with no keep/cancel decision recorded.`,
+      impactEgp: r.annualCost,
+      suggestedAction: 'Decide now — keep, renegotiate or cancel before it renews by default.',
+      entity: { type: 'subscription', id: r.id },
+    }));
+
+  if (wasteMonthly > 0) {
+    out.push({
+      id: 'subscription-waste',
+      severity: 'info',
+      domain: 'costs',
+      title: `${(wasteMonthly * 12).toFixed(0)} EGP a year in likely subscription waste`,
+      why: 'Idle seats or tools with no recent confirmed use.',
+      impactEgp: wasteMonthly * 12,
+      suggestedAction: 'Review the subscription audit and cut what nobody uses.',
+      entity: null,
+    });
+  }
+  return out;
+}
+
 // --- The single entry point every consumer uses ---
 export function buildSignals(inputs: SignalInputs): Signal[] {
   const { today } = inputs;
@@ -510,6 +551,7 @@ export function buildSignals(inputs: SignalInputs): Signal[] {
     ...followUpSignals(inputs.contacts ?? [], today),
     ...operateSignals(inputs.rocks ?? [], inputs.missedMetrics ?? [], today),
     ...governSignals(inputs.compliance ?? [], inputs.reviewableDocs ?? [], today),
+    ...subscriptionSignals(inputs.renewals ?? [], inputs.subscriptionWasteMonthly ?? 0),
   ];
   return rankSignals(all);
 }

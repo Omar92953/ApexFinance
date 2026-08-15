@@ -3,9 +3,10 @@ import type { Business, AdditionalCostRow } from '@/services/db';
 import {
   metricsApi, productsApi, shippingApi, costRulesApi, capitalApi,
   customerInvoicesApi, supplierBillsApi, dealsApi, contactsApi, costBudgetsApi, signalsApi,
-  projectsApi, timeEntriesApi, rateCardsApi, rocksApi, scorecardApi, governanceApi,
+  projectsApi, timeEntriesApi, rateCardsApi, rocksApi, scorecardApi, governanceApi, subscriptionsApi,
 } from '@/services/db';
 import { weekStart, metricStatus } from './eos';
+import { upcomingRenewals, totalWaste, annualCost } from './subscriptions';
 import { resolveCapabilities, type Capabilities } from '@/config/businessTypes';
 import { computeProjectEconomics, computeUnbilledValue } from './projects';
 import { supabase } from '@/lib/supabase';
@@ -402,12 +403,23 @@ export async function collectSignalsForBusiness(business: Business): Promise<Sig
 
   // Operate + Govern are universal — every business type has a weekly rhythm
   // and obligations, regardless of what it sells.
-  const [rocks, metrics, scEntries, governDocs] = await Promise.all([
+  const [rocks, metrics, scEntries, governDocs, subs] = await Promise.all([
     rocksApi.list(business.id).catch(() => []),
     scorecardApi.listMetrics(business.id).catch(() => []),
     scorecardApi.listEntries(business.id, weekStart(today)).catch(() => []),
     governanceApi.list(business.id).catch(() => []),
+    subscriptionsApi.list(business.id).catch(() => []),
   ]);
+
+  const subDomain = subs.map((s) => ({
+    id: s.id, name: s.name, vendor: s.vendor, amount: Number(s.amount) || 0, cycle: s.cycle,
+    renewsOn: s.renews_on, seats: s.seats, activeSeats: s.active_seats,
+    lastUsedOn: s.last_used_on, decision: s.decision, autoRenew: s.auto_renew, category: s.category,
+  }));
+  const renewals = upcomingRenewals(subDomain, today).map((r) => ({
+    id: r.subscription.id, name: r.subscription.name, amount: r.amount,
+    daysUntil: r.daysUntil, needsDecision: r.needsDecision, annualCost: annualCost(r.subscription),
+  }));
 
   const thisWeek = weekStart(today);
   const missedMetrics = metrics
@@ -440,6 +452,8 @@ export async function collectSignalsForBusiness(business: Business): Promise<Sig
     missedMetrics,
     compliance: governDocs.filter((d) => d.kind === 'compliance' && d.status !== 'archived'),
     reviewableDocs: governDocs.filter((d) => d.review_due && d.status === 'active'),
+    renewals,
+    subscriptionWasteMonthly: totalWaste(subDomain, today),
     invoices,
     bills,
     variants: variants.map((v) => ({

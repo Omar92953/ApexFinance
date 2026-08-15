@@ -10,6 +10,7 @@ import {
 import { weeksUntilNegative, troughBalance, summariseByKind, type ForecastWeek, type FlowKind } from '@/finance/forecast';
 import { Button } from '@/components/ui/button';
 import { cn, formatCurrency } from '@/lib/utils';
+import MarginBridgeCard from './MarginBridgeCard';
 
 const KIND_LABEL: Record<FlowKind, string> = {
   invoice_receipt: 'Customer invoices collected',
@@ -102,6 +103,8 @@ export default function ProfitabilityTab({ business, start, end }: { business: B
           </div>
         )}
       </div>
+
+      <MarginBridgeCard business={business} start={start} end={end} />
 
       {/* Monthly P&L trend */}
       <div className="rounded-xl border border-border bg-card p-5">

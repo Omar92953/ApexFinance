@@ -34,7 +34,9 @@ export const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; la
     { key: 'ledger', label: 'General Ledger' },
     { key: 'goals', label: 'Goals' },
     { key: 'profitability', label: 'Profitability' },
+    { key: 'budget', label: 'Budget' },
     { key: 'payables', label: 'Payables' },
+    { key: 'subscriptions', label: 'Subscriptions' },
   ],
   projects: [
     { key: 'active', label: 'Active Work' },
@@ -52,6 +54,7 @@ export const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; la
   sales: [
     { key: 'orders', label: 'Orders' },
     { key: 'invoices', label: 'Invoices' },
+    { key: 'collections', label: 'Collections' },
     { key: 'returns', label: 'Returns' },
     { key: 'cod', label: 'COD' },
   ],
@@ -59,6 +62,7 @@ export const SUB_TABS: Record<Exclude<SectionKey, 'overview'>, { key: string; la
     { key: 'crm-dashboard', label: 'Dashboard' },
     { key: 'customers', label: 'Customers' },
     { key: 'deals', label: 'Deals' },
+    { key: 'pipeline-analytics', label: 'Pipeline Analytics' },
     { key: 'tasks', label: 'Tasks' },
     { key: 'tickets', label: 'Tickets' },
   ],
@@ -119,6 +123,8 @@ const SUB_TAB_REQUIRES: Record<string, keyof Capabilities> = {
   active: 'projects',
   time: 'projects',
   rates: 'projects',
+  // Physical returns only make sense where physical goods move.
+  returns: 'inventory',
 };
 
 export function visibleSubTabs(section: Exclude<SectionKey, 'overview'>, caps: Capabilities) {

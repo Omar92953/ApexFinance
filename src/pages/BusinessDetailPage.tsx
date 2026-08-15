@@ -16,6 +16,10 @@ import OrgChartTab from '@/components/govern/OrgChartTab';
 import { HandbookTab, PoliciesTab, RegistersTab, DecisionsTab, KpiDictionaryTab, ComplianceTab } from '@/components/govern/GovernSections';
 import FinancialReportsTab from '@/components/reports/FinancialReportsTab';
 import OperationalReportsTab from '@/components/reports/OperationalReportsTab';
+import CollectionsTab from '@/components/sales/CollectionsTab';
+import BudgetTab from '@/components/finance/BudgetTab';
+import SubscriptionsTab from '@/components/finance/SubscriptionsTab';
+import PipelineAnalyticsTab from '@/components/crm/PipelineAnalyticsTab';
 import OverviewTab from '@/components/finance/OverviewTab';
 import DataEntryTab from '@/components/finance/DataEntryTab';
 import CostsTab from '@/components/finance/CostsTab';
@@ -116,7 +120,9 @@ export default function BusinessDetailPage() {
       {section === 'finance' && activeSubTab === 'ledger' && <GeneralLedgerTab business={business} start={start} end={end} />}
       {section === 'finance' && activeSubTab === 'goals' && <GoalsTab business={business} />}
       {section === 'finance' && activeSubTab === 'profitability' && <ProfitabilityTab business={business} start={start} end={end} />}
+      {section === 'finance' && activeSubTab === 'budget' && <BudgetTab business={business} />}
       {section === 'finance' && activeSubTab === 'payables' && <PayablesTab business={business} />}
+      {section === 'finance' && activeSubTab === 'subscriptions' && <SubscriptionsTab business={business} />}
 
       {section === 'projects' && activeSubTab === 'active' && <ProjectsTab business={business} />}
       {section === 'projects' && activeSubTab === 'time' && <TimeBillingTab business={business} />}
@@ -131,12 +137,14 @@ export default function BusinessDetailPage() {
 
       {section === 'sales' && activeSubTab === 'orders' && <SalesOrdersTab business={business} />}
       {section === 'sales' && activeSubTab === 'invoices' && <CustomerInvoicesTab business={business} />}
+      {section === 'sales' && activeSubTab === 'collections' && <CollectionsTab business={business} start={start} end={end} />}
       {section === 'sales' && activeSubTab === 'returns' && <ReturnsTab business={business} />}
       {section === 'sales' && activeSubTab === 'cod' && <CodReconciliationTab business={business} />}
 
       {section === 'crm' && activeSubTab === 'crm-dashboard' && <CrmDashboardTab business={business} />}
       {section === 'crm' && activeSubTab === 'customers' && <CustomersTab business={business} />}
       {section === 'crm' && activeSubTab === 'deals' && <DealsTab business={business} />}
+      {section === 'crm' && activeSubTab === 'pipeline-analytics' && <PipelineAnalyticsTab business={business} />}
       {section === 'crm' && activeSubTab === 'tasks' && <TasksTab business={business} />}
       {section === 'crm' && activeSubTab === 'tickets' && <TicketsTab business={business} />}
 
