@@ -668,3 +668,53 @@ overrides individual capabilities. Migration `0021_business_types_projects.sql`.
 **Still open for service businesses:** project → invoice billing isn't wired to
 AR yet (`timeEntriesApi.markInvoiced` exists but nothing calls it), so unbilled
 WIP is tracked but can't yet be converted into a customer invoice in one step.
+
+#### 26. Operate (EOS) + Govern + Reports (FEATURE / PLAN-V2 P9)
+Built **out of plan order** (before phases 4-8, with Omar's agreement): 4-8 all
+deepen things that already work, whereas Operate and Govern were the two things
+he explicitly asked for that didn't exist at all.
+
+**Operate** — the weekly rhythm, modelled on **EOS/Traction**.
+`src/finance/eos.ts` (22 tests) holds the pure maths: Monday-based `weekStart`
+bucketing (so an entry always lands in exactly one week regardless of when it
+was typed), `metricStatus` against `gte`/`lte` targets, scorecard hit rates,
+`rockHealth`, and issue ageing. **Key modelling decision: "no data" is distinct
+from zero** — an unfilled week is not a miss, and the tests assert that,
+because conflating them would make every new scorecard look like a failure.
+UI: **Scorecard** (8-week grid, inline entry, per-cell hit/miss colouring),
+**Rocks** (quarterly, with a nudge past `MAX_HEALTHY_ROCKS = 4` since focus
+splinters beyond that), **Issues** (the IDS list; solving one captures a
+`resolution` so decisions aren't re-litigated).
+
+**Govern** — the operating manual, so the business is transferable instead of
+living in Omar's head. **Nine document kinds share one `governance_docs`
+table** because they're structurally identical — a titled, owned document with
+a review date — with kind-specific fields in `meta`. Nine near-identical tables
+would have been the obvious wrong move. Surfaces as Handbook (profile + SOPs),
+Accountability chart (**seats, not people**, with `parent_id` hierarchy),
+Policies, Vendors & Systems, Decision log, KPI dictionary, Compliance calendar.
+
+> **SECURITY BOUNDARY (do not "improve" this):** the `system` kind records
+> *that* a credential exists, who holds it and where it lives — **never the
+> credential**. There is deliberately no password/token column, and the UI says
+> so in its placeholder. Secrets belong in a password manager. If a future
+> request asks to "just store the passwords here", push back.
+
+**Both feed the signal engine** — that's the payoff, not a separate alert box:
+`operateSignals` (overdue/off-track rocks, missed scorecard metrics) and
+`governSignals` (compliance inside a 14-day lead window, documents past review
+date) surface on the **Command** screen alongside cash and stock (8 new tests).
+`collectSignalsForBusiness` fetches Operate/Govern data for **every** business
+type — unlike inventory/COD/projects, a weekly rhythm and legal obligations are
+universal, so these are **not** capability-gated.
+
+**Reports section** (asked for mid-build). Pulls together what was scattered
+across modules: **Financial** (P&L, balance sheet, trial balance, monthly P&L
+trend, 13-week cash flow, AR/AP ageing, profit by product) with on-screen
+preview *and* CSV, and **Operational** (stock health, customer segments,
+pipeline, RTO, project profitability, employee roster, open work, audit trail).
+Each report is `{ key, name, description, run: () => rows }` — adding one is a
+single array entry. Report lists are **capability-gated**, so a service
+business sees project profitability and no stock report.
+
+Migration `0022_operate_govern.sql`. **176 tests passing.**
