@@ -87,7 +87,7 @@ system, per the master plan.
 
 > [!IMPORTANT]
 > **Mandatory Verification Checklist** — before calling any task done:
-> 1. `npm test` — all vitest suites green (currently **176 tests**; every new pure module adds its own).
+> 1. `npm test` — all vitest suites green (currently **254 tests**; every new pure module adds its own).
 > 2. `npm run build` — `tsc && vite build` clean, no type errors.
 > 3. If UI changed: rebuild the desktop app (`npm run build:electron`) and relaunch it to eyeball the change.
 > 4. Commit + push → confirm the GitHub Actions web deploy run finishes with `success` (don't just push and assume).
@@ -718,3 +718,65 @@ single array entry. Report lists are **capability-gated**, so a service
 business sees project profitability and no stock report.
 
 Migration `0022_operate_govern.sql`. **176 tests passing.**
+
+#### 27. Phases 4-8 + 10 — the rest of Product Plan v2 (FEATURE / PLAN-V2)
+Completes the roadmap. Each phase is pure logic + tests first, then schema, API,
+UI and a signal provider — the established shape.
+
+**Phase 4 — Collections** (`dunning.ts`, 20 tests). An overdue invoice is a
+*sequence*, not an alert: a five-rung ladder (pre-due nudge → final notice),
+each rung carrying a WhatsApp-ready template. **A live promise-to-pay or an
+open dispute suppresses chasing** — nagging someone who already committed
+destroys the relationship you're trying to collect from. **COD is excluded
+entirely**: the courier settles those, so chasing the customer is wrong.
+`dunning_events` has a unique `(invoice_id, step_key)` so a rung can't be
+double-sent. Adds DSO and ageing buckets. New **Sales → Collections** tab.
+
+**Phase 5 — Profit attribution** (`margin-bridge.ts`, 14 tests). Decomposes a
+profit change into volume / price-mix / unit cost / ad spend / other. **The
+steps always reconcile exactly to the total change** — the price×volume
+interaction residual gets its own visible line rather than being quietly
+dropped, which is the usual way these bridges lie. Also `rankContribution`,
+because revenue ranking and contribution ranking routinely disagree and revenue
+is the misleading one. Surfaces as `MarginBridgeCard` on Profitability.
+
+**Phase 6 — Pipeline analytics** (`pipeline.ts`, 13 tests). Stage conversion,
+ageing, win rate, cycle time, loss reasons. Conversion is inferred from how far
+each deal *ever got* (there's no stage-change log), and lost deals count as
+having entered the stage they died in. Unrecorded loss reasons are shown as
+such — those are the ones you can't learn from.
+
+**Phase 7 — Budget allocation** (`budget.ts`, 15 tests). **Counts commitments,
+not just paid bills**: money is gone when a PO is approved, not when the invoice
+lands, so "remaining" finally means remaining. `allocateBudget` always sums
+*exactly* to the envelope despite rounding (remainder goes to the largest
+share). **Approval gates warn but never hard-block** — a business sometimes
+genuinely must overspend; it just shouldn't happen by accident.
+
+**Phase 8 — Subscription auditor** (`subscriptions.ts`, 16 tests). Renewal
+calendar with 30-day lead, waste from seat utilisation + a **last-used
+attestation** (a human confirms, we have no telemetry), explicit
+keep/renegotiate/cancel per line, duplicate-category detection, realised
+savings. `importFromCostRules` seeds the register from existing `fixed_monthly`
+rules so the audit starts from reality rather than an empty page. Waste
+detection is deliberately **conservative** — flagging a tool someone silently
+relies on is worse than missing one.
+
+**Phase 10 — ERP chaining.** `next_document_number` claims numbers atomically
+via `UPDATE … RETURNING` (verified: repeat calls returned TST-0001 then
+TST-0002). `reserve_stock_for_order` holds stock against a confirmed order and
+**refuses when free (on-hand − reserved) quantity is short**, so nothing can be
+double-sold; `release_stock_for_order` unwinds it. `invoice_project_time`
+closes the service-business gap — unbilled hours become a real invoice, posted
+to the ledger and marked billed **in one transaction**, so time can never be
+double-billed. Note: **service revenue posts no COGS leg** — the labour was
+already expensed through payroll, so a second posting would double-count it.
+
+All of it feeds the Command screen: undecided renewals and subscription waste
+now rank alongside cash, stock, receivables, rocks and compliance.
+
+Migrations `0023` and `0024`. **254 tests passing.**
+
+> **Test-count note for future agents:** the verification checklist above cites
+> a number that goes stale every phase. Treat it as "whatever `npm test` reports
+> now, and it should only go up".

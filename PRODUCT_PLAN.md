@@ -1,7 +1,9 @@
 # Apex Business Manager — Product Plan v2: From Record-Keeping to Decision-Making
 
-> Status: proposed, not yet built. Companion to `PROJECT_GUIDE.md` (which records what
-> already exists). This document defines **what we build next and why**.
+> **Status: fully delivered.** All 11 phases plus the multi-vertical rework are built,
+> tested (254 tests) and shipped. This document is kept as the reasoning behind the
+> work — the diagnosis, the reference models, and why each decision was made.
+> `PROJECT_GUIDE.md` records the implementation detail.
 
 ---
 
@@ -81,19 +83,20 @@ converts the existing data into usefulness, and layers 3 and 4 depend on it.
 
 ## 2. Where each requested system stands
 
-| # | System | Today | Gap |
+| # | System | What was the gap | What shipped |
 |---|---|---|---|
-| 1 | **CRM** | Contacts, deals, tasks, tickets, RFM badges | No unified customer timeline; no communication log; segments don't drive action |
-| 2 | **ERP** | All 10 phases, GL, WAC, atomic RPCs | Modules don't chain — low stock doesn't draft a PO, an order doesn't reserve stock, no doc numbering, no approvals |
-| 3 | **Cash Flow** | 13-week forecast, straight-line extrapolation | Not a real forecast — same number every week. Ignores actual AR/AP due dates, payroll, COD lag |
-| 4 | **Overdue invoice alert** | A count in Alert Center | No dunning ladder, no reminder schedule, no message templates, no promise-to-pay, no DSO |
-| 5 | **Profit Tracker** | Profit engine + waterfall for one period | Snapshot only — no trend, no attribution by product/channel/customer, no variance vs plan |
-| 6 | **Subscription Auditor** | ❌ Nothing | Build from scratch |
-| 7 | **Sales Pipelines** | Kanban board (148 lines) | No next-step enforcement, no stage aging, no conversion analytics, single pipeline only |
-| 8 | **Budget allocation** | Monthly budget per cost category | No top-down allocation, no commitments, no reforecast, no approval gate |
-| 9 | **Operation system** | ❌ Nothing | Build from scratch — this is EOS (see §4) |
-| + | **Governance** | ❌ Nothing | Build from scratch (see §5) |
-| + | **Multi-vertical** | ✅ Built (see §0) | Service businesses still need project→invoice billing wired to AR |
+| 1 | **CRM** | Segments didn't drive action | RFM segments feed signals; follow-up queue; WhatsApp/call links; tickets |
+| 2 | **ERP** | Modules didn't chain | Document numbering, stock reservation, project→invoice, audit trail |
+| 3 | **Cash Flow** | Straight line — every week identical | Direct-method 13-week from real dated obligations; trough; driver breakdown |
+| 4 | **Overdue invoices** | Just a count | 5-rung dunning ladder with templates, promise-to-pay, disputes, DSO, ageing |
+| 5 | **Profit Tracker** | Single-period snapshot | Margin bridge (volume/price/cost/ads), contribution ranking, trend |
+| 6 | **Subscription Auditor** | Didn't exist | Renewal calendar, waste detection, keep/cancel decisions, realised savings |
+| 7 | **Sales Pipelines** | A board, no analysis | Stage conversion, ageing, win rate, cycle time, loss reasons, stale alerts |
+| 8 | **Budget allocation** | Counted only paid bills | Commitments consume budget on approval; envelope allocation; approval gates |
+| 9 | **Operation system** | Didn't exist | EOS — Scorecard, quarterly Rocks, Issues/IDS |
+| + | **Governance** | Didn't exist | Handbook, accountability chart, policies, registers, decisions, KPIs, compliance |
+| + | **Multi-vertical** | Assumed e-commerce | Four business types gating sections, KPIs and signals; Projects module |
+| + | **Reports** | Scattered across modules | One section: financial + operational, preview and CSV, capability-aware |
 
 ---
 
